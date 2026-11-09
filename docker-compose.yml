@@ -10,7 +10,8 @@ services:
       - "5432:5432"                    
     volumes:
       - instacart-postgres-data:/var/lib/postgresql/data
-      - ./data:/data:ro                 
+      - ./data:/data:ro
+      - ./sql:/sql:ro
 
 volumes:
   instacart-postgres-data:                               
