@@ -1,20 +1,3 @@
-/* =============================================================================
-   03_quality_checks.sql
-   Checagens de qualidade da camada RAW.
-
-   Como rodar:
-     docker compose exec postgres psql -U instacart -d instacart -f /sql/03_quality_checks.sql
-
-   Organização: cada checagem tem
-     - PERGUNTA   : o que estamos verificando
-     - POR QUE    : o impacto no recomendador se o problema existir
-     - RESULTADO  : o que encontramos (data da execução)
-     - DECISÃO    : o que a camada CLEAN vai fazer a respeito
-
-   No fim do arquivo há um RESUMO: uma única consulta que devolve todas as
-   checagens numa tabela só. É ela que você roda no dia a dia.
-   ============================================================================= */
-
 
 /* -----------------------------------------------------------------------------
    0. CONTAGEM DE LINHAS
