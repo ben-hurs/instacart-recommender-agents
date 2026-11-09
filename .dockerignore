@@ -1,0 +1,8 @@
+# Arquivos que NÃO devem ser enviados ao Docker no build.
+# (O build só precisa do requirements.txt.)
+.venv
+.git
+data
+.env
+__pycache__
+.pytest_cache
