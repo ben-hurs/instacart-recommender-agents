@@ -26,6 +26,76 @@ services:
     volumes:
       - instacart-qdrant-data:/qdrant/storage
 
+  # ---------------------------------------------------------------------------
+  # Kafka em modo KRaft: um único container faz o papel de "broker" (guarda e
+  # entrega as mensagens) e de "controller" (coordena o cluster). Não precisa
+  # mais de Zookeeper desde o Kafka 4.
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:4.1.1
+    container_name: instacart-kafka
+    ports:
+      - "9094:9094"                      # acesso a partir do Windows
+    environment:
+      CLUSTER_ID: instacart-kraft-0001
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      # Três "portas" (listeners):
+      #   INTERNAL   kafka:9092      -> para os outros containers (app, kafka-ui)
+      #   EXTERNAL   localhost:9094  -> para programas rodando no Windows
+      #   CONTROLLER :9093           -> uso interno do próprio Kafka
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:9094,CONTROLLER://:9093
+      # "Advertised" = o endereço que o Kafka DIZ ao cliente para usar.
+      # Precisa ser um endereço que o cliente consegue alcançar.
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      # Só existe 1 broker, então cada dado tem só 1 cópia (réplica).
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Tópicos são criados de propósito pelo kafka-init, nunca "sem querer".
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: -Xmx512m -Xms512m  # limita a memória (a máquina tem 16 GB)
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server kafka:9092 > /dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+
+  # Cria os tópicos e termina. "--if-not-exists" permite rodar de novo sem erro.
+  kafka-init:
+    image: apache/kafka:4.1.1
+    container_name: instacart-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for topic in cart-events recommendations; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+            --create --if-not-exists --topic "$$topic" --partitions 3 --replication-factor 1
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+    restart: "no"
+
+  # Painel web para ver tópicos, partições e mensagens: http://localhost:8080
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.4.2
+    container_name: instacart-kafka-ui
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: instacart
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
   app:
     build: .
     image: instacart-app
@@ -35,6 +105,7 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
       FASTEMBED_CACHE_PATH: /models
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     volumes:
       - ./:/app
       - instacart-models:/models

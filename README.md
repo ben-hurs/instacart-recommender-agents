@@ -4,7 +4,7 @@ Recomendador de produtos para supermercado online, construído em fases: da enge
 
 Projeto de estudo baseado nos módulos 4 (Multi-Agent Systems) e 5 (Real-Time Streaming) do *AI Data Engineer Bootcamp*, aplicados a dados reais de pedidos do Instacart.
 
-> **Status:** Fases 0 a 4 concluídas ✅ · próxima: Fase 5 (produtor Kafka)
+> **Status:** Fases 0 a 5 concluídas ✅ · próxima: Fase 6 (Spark Structured Streaming)
 
 ---
 
@@ -20,7 +20,9 @@ CSVs ──► Postgres (raw → clean) ──► Camada offline
                                      ├─ Regras de associação (suporte, lift)   ✅ Fase 3
                                      └─ Embeddings de produtos ──► Qdrant      ✅ Fase 4
 
-Produtor (replay dos pedidos) ──► Kafka [cart-events]                          ⏳ Fase 5
+Produtor (replay dos pedidos) ──► Kafka [cart-events]                          ✅ Fase 5
+                                     │
+                              Consumidor Python (estado + híbrido)  ──► Kafka [recommendations]   ✅ Fase 5
                                      │
                               Spark Structured Streaming                       ⏳ Fase 6
                               (estado do carrinho + recomendação rápida)
@@ -46,8 +48,9 @@ Os agentes **não** rodam a cada evento: são caros e lentos. A recomendação r
 | Linguagem | Python 3.12 (rodando em container) |
 | Dados | pandas, SQLAlchemy, psycopg |
 | Busca vetorial | Qdrant 1.20 + fastembed (`BAAI/bge-small-en-v1.5`, local na CPU) |
+| Streaming | Apache Kafka 4.1 (KRaft, sem Zookeeper) + confluent-kafka + Kafka UI |
 | Testes | pytest |
-| Próximas fases | Kafka, Spark, CrewAI, Claude, Streamlit |
+| Próximas fases | Spark, CrewAI, Claude, Streamlit |
 
 ---
 
@@ -162,6 +165,34 @@ O peso 0,1 foi escolhido **antes** de ver o resultado. Ajustá-lo olhando o test
 
 ---
 
+## ⚡ Streaming com Kafka (Fase 5)
+
+```
+src/producer.py ──► [cart-events] ──► src/consumer.py ──► [recommendations]
+ reencena os         3 partições        estado do carrinho     top-10 a cada
+ pedidos de teste    key = order_id     + híbrido (Fase 3)     item adicionado
+```
+
+- **Produtor:** reencena pedidos de teste item a item, com vários carrinhos abertos ao mesmo tempo (eventos intercalados) e ritmo controlado (`--rate`). Usa `acks=all` e idempotência: nenhuma mensagem se perde nem se duplica no envio.
+- **Chave = `order_id`:** o Kafka só garante ordem **dentro de uma partição**. Com o pedido como chave, todos os itens de um carrinho caem na mesma partição e chegam na ordem certa.
+- **Consumidor:** guarda os carrinhos abertos em memória (`{order_id: [itens]}`), chama o híbrido a cada `item_added`, publica em `recommendations` e libera a memória no `checkout`.
+- **Contrato:** [`src/events.py`](src/events.py) define o formato dos eventos, compartilhado por produtor e consumidor.
+
+**Resultado** (1.000 carrinhos, 11.333 eventos a 200 eventos/s):
+
+| Métrica | Valor |
+|---|---|
+| Latência de processamento (p50 / p95 / p99) | **0,10 / 0,22 / 0,32 ms** |
+| Latência ponta a ponta, produtor → consumidor (p50 / p95) | 6,1 / 7,3 ms |
+| Hit rate online @10 (o próximo item estava nas sugestões anteriores?) | **16,4%** |
+| Mensagens perdidas | 0 (lag do consumer group = 0) |
+
+- A recomendação é praticamente instantânea: os modelos ficam em memória e são só consultas a dicionários. A maior parte dos 6 ms ponta a ponta é o `linger.ms=5` do produtor, que espera 5 ms para enviar mensagens em lote.
+- O hit rate online é mais difícil que o da Fase 3: aqui o modelo precisa acertar **o próximo item**, e não qualquer item do resto do carrinho.
+- Um bug encontrado na medição: o horário do evento era carimbado quando o objeto era **criado**, e não quando era **enviado**, e a latência aparecia como 16 s. A correção foi carimbar no momento do envio.
+
+---
+
 ## 🚀 Como rodar
 
 **Pré-requisitos:** Docker Desktop (com WSL2 no Windows).
@@ -193,6 +224,19 @@ docker compose run --rm app python -m src.evaluate --fase 4   # só uma fase
 
 Painel do Qdrant: http://localhost:6333/dashboard
 
+**Streaming (Fase 5):** dois terminais.
+
+```bash
+# Subir o Kafka, criar os tópicos e o painel (http://localhost:8080)
+docker compose up -d kafka kafka-init kafka-ui
+
+# Terminal 1: consumidor (para sozinho após 20 s sem mensagens)
+docker compose run --rm app python -m src.consumer
+
+# Terminal 2: produtor
+docker compose run --rm app python -m src.producer --orders 1000 --rate 200
+```
+
 > No Git Bash do Windows, caminhos como `/sql/...` são convertidos para caminhos do Windows. Rode os comandos `psql -f` pelo PowerShell (ou use `//sql/...`).
 
 > ⚠️ O Postgres só lê `POSTGRES_PASSWORD` na **primeira** criação do volume. Se trocar a senha depois, use `ALTER USER` ou recrie o volume (`docker compose down -v`, que **apaga os dados**).
@@ -200,7 +244,7 @@ Painel do Qdrant: http://localhost:6333/dashboard
 ## 📁 Estrutura
 
 ```
-├── docker-compose.yml      # Postgres + Qdrant + container Python (app)
+├── docker-compose.yml      # Postgres, Qdrant, Kafka, Kafka UI e container Python (app)
 ├── Dockerfile              # imagem do app
 ├── sql/
 │   ├── 01_create_raw.sql   # schema raw (espelho dos CSVs)
@@ -217,6 +261,9 @@ Painel do Qdrant: http://localhost:6333/dashboard
 │   ├── hybrid.py           # recompra + regras (+ embeddings)
 │   ├── embeddings.py       # indexação no Qdrant e busca semântica
 │   ├── similarity.py       # recomendador por vizinhos de embedding
+│   ├── events.py           # contrato dos eventos do Kafka
+│   ├── producer.py         # reencena carrinhos no Kafka
+│   ├── consumer.py         # recomenda em tempo real
 │   └── evaluate.py         # protocolos de avaliação (fases 2, 3 e 4)
 └── tests/                  # pytest
 ```
@@ -228,7 +275,7 @@ Painel do Qdrant: http://localhost:6333/dashboard
 - [x] **Fase 2:** baselines e framework de avaliação
 - [x] **Fase 3:** regras de associação e recomendador híbrido
 - [x] **Fase 4:** embeddings de produtos no Qdrant e busca semântica
-- [ ] **Fase 5:** produtor Kafka (replay de carrinhos)
+- [x] **Fase 5:** Kafka, produtor (replay de carrinhos) e consumidor recomendador
 - [ ] **Fase 6:** Spark Structured Streaming
 - [ ] **Fase 7:** crew de agentes (CrewAI + Claude)
 - [ ] **Fase 8:** dashboard Streamlit
