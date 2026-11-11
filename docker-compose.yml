@@ -18,17 +18,33 @@ services:
       timeout: 3s
       retries: 10
 
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    container_name: instacart-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - instacart-qdrant-data:/qdrant/storage
+
   app:
     build: .
     image: instacart-app
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      FASTEMBED_CACHE_PATH: /models
     volumes:
       - ./:/app
+      - instacart-models:/models
     depends_on:
       postgres:
         condition: service_healthy
+      qdrant:
+        condition: service_started
 
 volumes:
   instacart-postgres-data:
+  instacart-qdrant-data:
+  instacart-models:

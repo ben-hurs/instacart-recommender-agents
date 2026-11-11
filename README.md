@@ -4,7 +4,7 @@ Recomendador de produtos para supermercado online, construído em fases: da enge
 
 Projeto de estudo baseado nos módulos 4 (Multi-Agent Systems) e 5 (Real-Time Streaming) do *AI Data Engineer Bootcamp*, aplicados a dados reais de pedidos do Instacart.
 
-> **Status:** Fases 0 a 3 concluídas ✅ · próxima: Fase 4 (embeddings no Qdrant)
+> **Status:** Fases 0 a 4 concluídas ✅ · próxima: Fase 5 (produtor Kafka)
 
 ---
 
@@ -18,7 +18,7 @@ Enquanto o cliente monta o carrinho, sugerir o que mais ele provavelmente vai co
 CSVs ──► Postgres (raw → clean) ──► Camada offline
                                      ├─ Popularidade e recompra (baselines)    ✅ Fase 2
                                      ├─ Regras de associação (suporte, lift)   ✅ Fase 3
-                                     └─ Embeddings de produtos ──► Qdrant      ⏳ Fase 4
+                                     └─ Embeddings de produtos ──► Qdrant      ✅ Fase 4
 
 Produtor (replay dos pedidos) ──► Kafka [cart-events]                          ⏳ Fase 5
                                      │
@@ -45,8 +45,9 @@ Os agentes **não** rodam a cada evento: são caros e lentos. A recomendação r
 | Banco | PostgreSQL 16 |
 | Linguagem | Python 3.12 (rodando em container) |
 | Dados | pandas, SQLAlchemy, psycopg |
+| Busca vetorial | Qdrant 1.20 + fastembed (`BAAI/bge-small-en-v1.5`, local na CPU) |
 | Testes | pytest |
-| Próximas fases | Kafka, Spark, Qdrant, CrewAI, Claude, Streamlit |
+| Próximas fases | Kafka, Spark, CrewAI, Claude, Streamlit |
 
 ---
 
@@ -124,6 +125,43 @@ Checagens completas em [`sql/03_quality_checks.sql`](sql/03_quality_checks.sql).
 
 ---
 
+## 🧭 Embeddings de produtos (Fase 4)
+
+**Indexação** ([`src/embeddings.py`](src/embeddings.py)): cada produto vira o texto `"nome | corredor | departamento"`, que o modelo `bge-small-en-v1.5` transforma num vetor de 384 dimensões. Os **48.436 produtos** vão para o Qdrant em ~3 minutos na CPU, e os 10 vizinhos de cada produto ficam pré-calculados no Postgres (`rules.embedding_neighbors`).
+
+**A busca semântica funciona bem:**
+
+| Consulta | Primeiros resultados |
+|---|---|
+| parecidos com *Organic Whole Milk* | Organic Milk Whole, Organic Raw Whole Milk... |
+| *"something for a barbecue"* | BBQ Sauce, Barbecue Sauce, **Grill Lighter** |
+| *"food for my cat"* | Cat Food, Indoor Cat Food, Turkey & Salmon Cat Food... |
+
+O modelo não procura palavras: ele encontra o acendedor de churrasqueira sem a palavra "barbecue" no nome. A busca também revelou **duplicatas de catálogo**: "Organic Whole Milk" e "Organic  Whole Milk" (com espaço duplo) têm similaridade 1,000.
+
+**Mas, para prever o próximo item do carrinho, os embeddings falham** (mesmo protocolo da Fase 3):
+
+| Recomendador | Grupo | Precision@10 | Recall@10 | Hit rate@10 |
+|---|---|---:|---:|---:|
+| Popularidade | com histórico | 0,055 | 0,063 | 37,4% |
+| **Híbrido** (Fase 3) | com histórico | **0,155** | **0,200** | **66,8%** |
+| Embeddings | com histórico | 0,002 | 0,004 | 2,2% |
+| Híbrido v2 (+ embeddings, peso 0,1) | com histórico | 0,155 | 0,199 | 66,7% |
+| **Regras** (Fase 3) | sem histórico | **0,056** | **0,073** | **38,4%** |
+| Embeddings | sem histórico | 0,002 | 0,004 | 2,2% |
+| Híbrido v2 | sem histórico | 0,052 | 0,068 | 36,0% |
+
+**Por quê:** embeddings de texto encontram **substitutos** (leite integral → outro leite integral), e ninguém coloca duas versões do mesmo produto no carrinho. Para o próximo item, o que importa são **complementos** (pão → manteiga), e isso só os pedidos ensinam. Além disso, a maioria dos vizinhos é de produtos raros, que quase ninguém compra.
+
+**Conclusão:** o híbrido da Fase 3 continua sendo o recomendador oficial. Os embeddings ficam com o papel em que são bons:
+- **busca semântica** por texto livre, a principal ferramenta dos agentes da Fase 7;
+- **substituição** de produto (item em falta → o mais parecido);
+- **limpeza de catálogo** (achar duplicatas).
+
+O peso 0,1 foi escolhido **antes** de ver o resultado. Ajustá-lo olhando o teste seria vazamento.
+
+---
+
 ## 🚀 Como rodar
 
 **Pré-requisitos:** Docker Desktop (com WSL2 no Windows).
@@ -132,8 +170,8 @@ Checagens completas em [`sql/03_quality_checks.sql`](sql/03_quality_checks.sql).
 # 1. Configurar credenciais
 cp .env.example .env          # e troque a senha
 
-# 2. Subir o Postgres
-docker compose up -d postgres
+# 2. Subir o Postgres e o Qdrant
+docker compose up -d postgres qdrant
 
 # 3. Criar e carregar o banco (na ordem)
 docker compose exec postgres psql -U instacart -d instacart -f /sql/01_create_raw.sql
@@ -143,11 +181,17 @@ docker compose exec postgres psql -U instacart -d instacart -f /sql/04_create_cl
 docker compose exec postgres psql -U instacart -d instacart -f /sql/05_eval_splits.sql
 docker compose exec postgres psql -U instacart -d instacart -f /sql/06_association_rules.sql
 
-# 4. Rodar os testes e a avaliação (Python roda em container)
+# 4. Indexar os produtos no Qdrant (1ª vez baixa o modelo; ~4 min)
+docker compose run --rm app python -m src.embeddings
+docker compose run --rm app python -m src.embeddings --demo   # só as buscas de exemplo
+
+# 5. Rodar os testes e a avaliação (Python roda em container)
 docker compose run --rm app pytest
-docker compose run --rm app python -m src.evaluate            # fases 2 e 3
-docker compose run --rm app python -m src.evaluate --fase 3   # só uma fase
+docker compose run --rm app python -m src.evaluate            # fases 2, 3 e 4
+docker compose run --rm app python -m src.evaluate --fase 4   # só uma fase
 ```
+
+Painel do Qdrant: http://localhost:6333/dashboard
 
 > No Git Bash do Windows, caminhos como `/sql/...` são convertidos para caminhos do Windows. Rode os comandos `psql -f` pelo PowerShell (ou use `//sql/...`).
 
@@ -156,7 +200,7 @@ docker compose run --rm app python -m src.evaluate --fase 3   # só uma fase
 ## 📁 Estrutura
 
 ```
-├── docker-compose.yml      # Postgres + container Python (app)
+├── docker-compose.yml      # Postgres + Qdrant + container Python (app)
 ├── Dockerfile              # imagem do app
 ├── sql/
 │   ├── 01_create_raw.sql   # schema raw (espelho dos CSVs)
@@ -170,8 +214,10 @@ docker compose run --rm app python -m src.evaluate --fase 3   # só uma fase
 │   ├── metrics.py          # precision, recall, hit rate @k
 │   ├── baseline.py         # popularidade e recompra pessoal
 │   ├── rules.py            # recomendador por regras de associação
-│   ├── hybrid.py           # recompra + regras
-│   └── evaluate.py         # protocolos de avaliação (fases 2 e 3)
+│   ├── hybrid.py           # recompra + regras (+ embeddings)
+│   ├── embeddings.py       # indexação no Qdrant e busca semântica
+│   ├── similarity.py       # recomendador por vizinhos de embedding
+│   └── evaluate.py         # protocolos de avaliação (fases 2, 3 e 4)
 └── tests/                  # pytest
 ```
 
@@ -181,7 +227,7 @@ docker compose run --rm app python -m src.evaluate --fase 3   # só uma fase
 - [x] **Fase 1:** carga, checagens de qualidade e camada clean
 - [x] **Fase 2:** baselines e framework de avaliação
 - [x] **Fase 3:** regras de associação e recomendador híbrido
-- [ ] **Fase 4:** embeddings de produtos no Qdrant
+- [x] **Fase 4:** embeddings de produtos no Qdrant e busca semântica
 - [ ] **Fase 5:** produtor Kafka (replay de carrinhos)
 - [ ] **Fase 6:** Spark Structured Streaming
 - [ ] **Fase 7:** crew de agentes (CrewAI + Claude)
