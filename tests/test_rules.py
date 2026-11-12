@@ -43,9 +43,35 @@ def test_reorder_exclui_o_carrinho():
     assert recommend_reorder(42, [LEITE], taxas, POPULARES, k=2) == [CAFE, BANANA]
 
 
-def test_hibrido_soma_recompra_e_regras():
+def test_hibrido_com_soma_versao_fase_3():
     # Cliente compra café em 50% dos pedidos; carrinho tem leite e pão.
     # manteiga = 0.7 (regras) ; café = 0.5 (recompra) + 0.2 (regras) = 0.7 ; desempate pelo id
     taxas = {42: {CAFE: 0.5}}
-    recs = recommend_hybrid(42, [LEITE, PAO], taxas, REGRAS, POPULARES, k=2)
+    recs = recommend_hybrid(42, [LEITE, PAO], taxas, REGRAS, POPULARES, k=2, rules_agg="sum")
     assert recs == [MANTEIGA, CAFE]
+
+
+def test_hibrido_com_media_valoriza_a_recompra():
+    # Média: manteiga = 0.7 / 2 = 0.35 ; café = 0.5 + 0.2 / 2 = 0.6 -> café primeiro.
+    taxas = {42: {CAFE: 0.5}}
+    recs = recommend_hybrid(42, [LEITE, PAO], taxas, REGRAS, POPULARES, k=2)
+    assert recs == [CAFE, MANTEIGA]
+
+
+def test_media_nao_cresce_com_o_tamanho_do_carrinho():
+    # 40 itens no carrinho, todos com regra apontando para banana (conf 0.3).
+    regras = {item: [(BANANA, 0.3)] for item in range(100, 140)}
+    carrinho = list(range(100, 140))
+    assert rule_scores(carrinho, regras, agg="sum")[BANANA] == pytest.approx(12.0)
+    assert rule_scores(carrinho, regras, agg="mean")[BANANA] == pytest.approx(0.3)
+
+
+def test_soma_e_media_dao_a_mesma_ordem_so_com_regras():
+    soma = rule_scores([LEITE, PAO], REGRAS, agg="sum")
+    media = rule_scores([LEITE, PAO], REGRAS, agg="mean")
+    assert sorted(soma, key=soma.get) == sorted(media, key=media.get)
+
+
+def test_agg_invalido():
+    with pytest.raises(ValueError):
+        rule_scores([LEITE], REGRAS, agg="max")

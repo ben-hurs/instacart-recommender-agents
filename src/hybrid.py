@@ -57,12 +57,19 @@ def recommend_reorder(user_id: int, cart: list[int], rates: PurchaseRates,
 
 def recommend_hybrid(user_id: int, cart: list[int], rates: PurchaseRates, rules: Rules,
                      popular: list[int], k: int = 10, rules_weight: float = 1.0,
-                     neighbors: Rules | None = None, emb_weight: float = 0.1) -> list[int]:
-    """Recompra + regras (+ embeddings, se `neighbors` for passado), somando os scores."""
+                     neighbors: Rules | None = None, emb_weight: float = 0.1,
+                     rules_agg: str = "mean") -> list[int]:
+    """Recompra + regras (+ embeddings, se `neighbors` for passado), somando os scores.
+
+    rules_agg="mean" (padrão): o score de regras fica entre 0 e 1, na mesma
+    escala da taxa de recompra, para qualquer tamanho de carrinho.
+    rules_agg="sum": a versão original da Fase 3 (em carrinhos grandes, as
+    regras engolem a recompra). Mantida para comparação.
+    """
     scores: dict[int, float] = defaultdict(float)
     for product_id, taxa in rates.get(user_id, {}).items():
         scores[product_id] += taxa
-    for product_id, score in rule_scores(cart, rules).items():
+    for product_id, score in rule_scores(cart, rules, agg=rules_agg).items():
         scores[product_id] += rules_weight * score
     if neighbors is not None:
         for product_id, sim in rule_scores(cart, neighbors).items():

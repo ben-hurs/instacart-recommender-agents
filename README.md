@@ -121,7 +121,7 @@ Checagens completas em [`sql/03_quality_checks.sql`](sql/03_quality_checks.sql).
 
 **Conclusões:**
 
-- **O híbrido é o melhor para quem tem histórico**, mas ganha da recompra por pouco (+3%). O hábito do cliente ainda é o sinal mais forte.
+- **O híbrido é o melhor para quem tem histórico**, mas ganha da recompra por pouco (+3%). O hábito do cliente ainda é o sinal mais forte. (Na Fase 5, o híbrido passou a usar a **média** das regras: veja a correção mais abaixo.)
 - **Para clientes novos, as regras são o melhor que temos**: +20% de precisão sobre a popularidade, usando só os 3 itens do carrinho.
 - **As regras sozinhas são fracas** (0,065): só 5.277 produtos têm regras, e as confianças são baixas (a maioria fica abaixo de 0,3).
 - Muitas regras fortes ligam **variações do mesmo produto** (sabores do mesmo iogurte, rações da mesma marca). Isso motiva a Fase 4: **similaridade semântica** de produtos com embeddings.
@@ -184,12 +184,30 @@ src/producer.py ──► [cart-events] ──► src/consumer.py ──► [rec
 |---|---|
 | Latência de processamento (p50 / p95 / p99) | **0,10 / 0,22 / 0,32 ms** |
 | Latência ponta a ponta, produtor → consumidor (p50 / p95) | 6,1 / 7,3 ms |
-| Hit rate online @10 (o próximo item estava nas sugestões anteriores?) | **16,4%** |
+| Hit rate online @10 (o próximo item estava nas sugestões anteriores?) | 16,4% → **17,7%** depois da correção abaixo |
 | Mensagens perdidas | 0 (lag do consumer group = 0) |
 
 - A recomendação é praticamente instantânea: os modelos ficam em memória e são só consultas a dicionários. A maior parte dos 6 ms ponta a ponta é o `linger.ms=5` do produtor, que espera 5 ms para enviar mensagens em lote.
 - O hit rate online é mais difícil que o da Fase 3: aqui o modelo precisa acertar **o próximo item**, e não qualquer item do resto do carrinho.
 - Um bug encontrado na medição: o horário do evento era carimbado quando o objeto era **criado**, e não quando era **enviado**, e a latência aparecia como 16 s. A correção foi carimbar no momento do envio.
+
+### 🔧 Correção descoberta no streaming: soma → média
+
+Olhando as mensagens no Kafka UI, um carrinho de **43 itens** (terminando em 5 sabores de gelato) recebeu: Banana, Organic Avocado, Limes, Large Lemon... os mais populares do site, e nenhum produto que o cliente costuma comprar.
+
+**Causa:** o score de regras era a **soma** das confianças de cada item do carrinho. Com 43 itens, quase todos "votam" na banana, e o score chega a **5,3**, enquanto a taxa de recompra vai no máximo até 1,0. Em carrinhos grandes, as regras engoliam o histórico do cliente.
+
+**Correção:** usar a **média** (soma ÷ itens do carrinho), que fica entre 0 e 1 para qualquer tamanho de carrinho, na mesma escala da recompra. O mesmo carrinho passou a receber produtos que o cliente compra em 43% a 71% dos pedidos (alface, hot dog, mirtilo, homus...).
+
+| Protocolo | Híbrido com soma | Híbrido com média | Ganho |
+|---|---:|---:|---:|
+| Offline, carrinho com 3 itens (precision@10) | 0,155 | **0,159** | +2% |
+| Offline, carrinho com 10 itens (precision@10) | 0,082 | **0,099** | **+21%** |
+| Online, streaming (hit rate @10, mesmos 1.000 carrinhos) | 16,4% | **17,7%** | +8% |
+
+Com 10 itens, a versão com soma era **pior que a recompra sozinha** (0,093). A avaliação da Fase 3 não pegou o problema porque sempre revelava só 3 itens. **Lição:** olhar exemplos reais encontra defeitos que as médias escondem, e o protocolo de avaliação precisa cobrir os casos de produção (carrinhos de todos os tamanhos).
+
+> A mudança foi motivada por um defeito estrutural (a escala do score), não por tentativa e erro no teste. Ainda assim, o ideal seria confirmá-la num conjunto de **validação** separado.
 
 ---
 
@@ -220,6 +238,7 @@ docker compose run --rm app python -m src.embeddings --demo   # só as buscas de
 docker compose run --rm app pytest
 docker compose run --rm app python -m src.evaluate            # fases 2, 3 e 4
 docker compose run --rm app python -m src.evaluate --fase 4   # só uma fase
+docker compose run --rm app python -m src.evaluate --fase 3 --cart-size 10   # carrinho com 10 itens
 ```
 
 Painel do Qdrant: http://localhost:6333/dashboard

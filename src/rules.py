@@ -48,17 +48,32 @@ def load_rules(engine: Engine, min_lift: float = 1.0, max_per_item: int = 50) ->
     return dict(rules)
 
 
-def rule_scores(cart: list[int], rules: Rules) -> dict[int, float]:
-    """Soma das confianças de cada consequente, para os itens do carrinho.
+def rule_scores(cart: list[int], rules: Rules, agg: str = "sum") -> dict[int, float]:
+    """Score de cada consequente, a partir dos itens do carrinho.
+
+    agg="sum":  soma das confianças. Cresce com o tamanho do carrinho: com 40
+                itens, um produto popular recebe "votos" de quase todos e o
+                score passa de 5, mesmo sendo uma soma de probabilidades.
+    agg="mean": soma / nº de itens do carrinho. Fica sempre entre 0 e 1,
+                qualquer que seja o tamanho do carrinho. Use esta quando o
+                score for COMBINADO com outros (ex.: no híbrido).
+
+    Para ordenar SÓ por regras, tanto faz: dividir todos os scores pelo mesmo
+    número não muda a ordem. A diferença aparece quando se soma com a recompra.
 
     Os itens que já estão no carrinho não recebem score.
     """
+    if agg not in ("sum", "mean"):
+        raise ValueError(f"agg inválido: {agg!r}")
     in_cart = set(cart)
     scores: dict[int, float] = defaultdict(float)
     for a in in_cart:
         for b, conf in rules.get(a, []):
             if b not in in_cart:
                 scores[b] += conf
+    if agg == "mean" and in_cart:
+        n = len(in_cart)
+        return {b: s / n for b, s in scores.items()}
     return dict(scores)
 
 

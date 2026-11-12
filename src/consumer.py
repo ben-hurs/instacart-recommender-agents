@@ -79,13 +79,14 @@ def percentil(valores: list[float], p: float) -> float:
     return ordenados[min(len(ordenados) - 1, int(p / 100 * len(ordenados)))]
 
 
-def build_recommender():
+def build_recommender(rules_agg: str = "mean"):
     """Carrega os modelos UMA vez, na inicialização (é a parte lenta)."""
     engine = get_engine()
     popular = popular_products(engine, k=K + 20)["product_id"].tolist()
     rates = load_purchase_rates(engine)
     rules = load_rules(engine)
-    return lambda user_id, cart: recommend_hybrid(user_id, cart, rates, rules, popular, K)
+    return lambda user_id, cart: recommend_hybrid(user_id, cart, rates, rules, popular, K,
+                                                  rules_agg=rules_agg)
 
 
 def main() -> None:
@@ -93,11 +94,13 @@ def main() -> None:
     parser.add_argument("--idle-timeout", type=float, default=20,
                         help="para depois de N segundos sem mensagens (0 = nunca)")
     parser.add_argument("--group", default="recommender", help="consumer group")
+    parser.add_argument("--rules-agg", choices=["mean", "sum"], default="mean",
+                        help="como combinar as regras no híbrido (sum = versão antiga)")
     args = parser.parse_args()
 
-    print("Carregando modelos...")
+    print(f"Carregando modelos (regras: {args.rules_agg})...")
     t = time.perf_counter()
-    state = CartState(build_recommender())
+    state = CartState(build_recommender(args.rules_agg))
     print(f"Modelos prontos em {time.perf_counter() - t:.1f}s")
 
     consumer = Consumer({
@@ -147,7 +150,7 @@ def main() -> None:
             if recs is not None:
                 proc_ms = (time.perf_counter() - inicio) * 1000
                 rec = Recommendation(event.order_id, event.user_id, event.position,
-                                     recs, "hybrid", round(proc_ms, 3))
+                                     recs, f"hybrid-{args.rules_agg}", round(proc_ms, 3))
                 producer.produce(TOPIC_RECOMMENDATIONS, key=rec.key, value=rec.to_json())
                 producer.poll(0)
                 latencias_proc.append(proc_ms)

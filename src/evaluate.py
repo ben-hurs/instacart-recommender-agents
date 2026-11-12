@@ -143,13 +143,13 @@ def load_partial_carts(engine: Engine, cart_size: int = CART_SIZE):
     return carts, gabarito
 
 
-def partial_cart(engine: Engine, fase: int) -> pd.DataFrame:
+def partial_cart(engine: Engine, fase: int, cart_size: int = CART_SIZE) -> pd.DataFrame:
     """Protocolo de carrinho parcial. Fase 3: sem embeddings. Fase 4: com."""
     usa_embeddings = fase >= 4
-    print(f"\n=== FASE {fase}: carrinho parcial ({CART_SIZE} itens revelados) ===")
-    carts, gabarito = load_partial_carts(engine)
+    print(f"\n=== FASE {fase}: carrinho parcial ({cart_size} itens revelados) ===")
+    carts, gabarito = load_partial_carts(engine, cart_size)
 
-    popular_k = popular_products(engine, k=K + CART_SIZE)["product_id"].tolist()
+    popular_k = popular_products(engine, k=K + cart_size)["product_id"].tolist()
     rates = load_purchase_rates(engine)
     rules = load_rules(engine)
     neighbors = load_neighbors(engine) if usa_embeddings else None
@@ -164,6 +164,9 @@ def partial_cart(engine: Engine, fase: int) -> pd.DataFrame:
         "popularidade": lambda u: [p for p in popular_k if p not in carts[u]][:K],
         "recompra":     lambda u: recommend_reorder(u, carts[u], rates, popular_k, K),
         "regras":       lambda u: recommend(carts[u], rules, popular_k, K),
+        # "soma" = versão original da Fase 3; "média" = corrigida (padrão atual).
+        "híbrido soma": lambda u: recommend_hybrid(u, carts[u], rates, rules, popular_k, K,
+                                                   rules_agg="sum"),
         "híbrido":      lambda u: recommend_hybrid(u, carts[u], rates, rules, popular_k, K),
     }
     if usa_embeddings:
@@ -176,12 +179,15 @@ def partial_cart(engine: Engine, fase: int) -> pd.DataFrame:
         print(f"Avaliando grupo '{grupo}'...")
         for nome, recomendar in recomendadores.items():
             linhas.append(evaluate(nome, grupo, recomendar, usuarios, gabarito))
-    return save_and_print(linhas, f"fase{fase}_resultados.csv")
+    sufixo = "" if cart_size == CART_SIZE else f"_carrinho{cart_size}"
+    return save_and_print(linhas, f"fase{fase}_resultados{sufixo}.csv")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Avalia os recomendadores.")
     parser.add_argument("--fase", type=int, choices=[2, 3, 4], help="roda só uma fase")
+    parser.add_argument("--cart-size", type=int, default=CART_SIZE,
+                        help="itens revelados no carrinho parcial (fases 3 e 4)")
     args = parser.parse_args()
 
     engine = get_engine()
@@ -189,7 +195,7 @@ def main() -> None:
         fase2(engine)
     for fase in (3, 4):
         if args.fase in (None, fase):
-            partial_cart(engine, fase)
+            partial_cart(engine, fase, args.cart_size)
 
 
 if __name__ == "__main__":
