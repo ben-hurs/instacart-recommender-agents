@@ -4,7 +4,7 @@ Recomendador de produtos para supermercado online, construído em fases: da enge
 
 Projeto de estudo baseado nos módulos 4 (Multi-Agent Systems) e 5 (Real-Time Streaming) do *AI Data Engineer Bootcamp*, aplicados a dados reais de pedidos do Instacart.
 
-> **Status:** Fases 0 a 5 concluídas ✅ · próxima: Fase 6 (Spark Structured Streaming)
+> **Status:** Fases 0 a 6 concluídas ✅ · próxima: Fase 7 (agentes CrewAI + Claude)
 
 ---
 
@@ -24,8 +24,8 @@ Produtor (replay dos pedidos) ──► Kafka [cart-events]                     
                                      │
                               Consumidor Python (estado + híbrido)  ──► Kafka [recommendations]   ✅ Fase 5
                                      │
-                              Spark Structured Streaming                       ⏳ Fase 6
-                              (estado do carrinho + recomendação rápida)
+                              Spark Structured Streaming                       ✅ Fase 6
+                              (estado do carrinho + recomendação + métricas por minuto)
                                      │
                        casos especiais (cliente novo, explicação)
                                      │
@@ -49,8 +49,9 @@ Os agentes **não** rodam a cada evento: são caros e lentos. A recomendação r
 | Dados | pandas, SQLAlchemy, psycopg |
 | Busca vetorial | Qdrant 1.20 + fastembed (`BAAI/bge-small-en-v1.5`, local na CPU) |
 | Streaming | Apache Kafka 4.1 (KRaft, sem Zookeeper) + confluent-kafka + Kafka UI |
+| Processamento distribuído | Apache Spark 4.0.1 Structured Streaming (PySpark, imagem oficial) |
 | Testes | pytest |
-| Próximas fases | Spark, CrewAI, Claude, Streamlit |
+| Próximas fases | CrewAI, Claude, Streamlit |
 
 ---
 
@@ -211,6 +212,44 @@ Com 10 itens, a versão com soma era **pior que a recompra sozinha** (0,093). A 
 
 ---
 
+## 🔥 Spark Structured Streaming (Fase 6)
+
+Os mesmos eventos do Kafka, agora processados pelo Spark, em dois jobs:
+
+```
+               ┌─ Job 1: métricas (src/spark_jobs/metrics.py) ───────────────┐
+               │  janelas de 1 min + watermark de 30 s -> UPSERT no Postgres  │──► stream.cart_metrics_1min
+[cart-events] ─┤                                                              │    stream.product_metrics_1min
+               └─ Job 2: recomendação (src/spark_jobs/recommender.py) ────────┐
+                  estado por carrinho (applyInPandasWithState) + híbrido    │──► [recommendations]
+                  checkpoint: offsets do Kafka + carrinhos abertos           │
+```
+
+**Consumidor Python vs. Spark**, com os mesmos 300 carrinhos (3.271 eventos a 60/s), medidos pelo [`src/stream_report.py`](src/stream_report.py), que lê os dois tópicos e confere tudo:
+
+| | Consumidor Python (Fase 5) | Spark (Fase 6) |
+|---|---:|---:|
+| Hit rate online @10 | 0,172 (460/2.671) | **0,172 (460/2.671)**: idêntico |
+| Latência ponta a ponta p50 / p95 | **6 / 8 ms** | 616 / 1.030 ms |
+| Recomendações faltantes / duplicadas | 0 / 0 | 0 / 0 |
+| Se o processo cair no meio | perde os carrinhos abertos (estado só na memória) | **volta do checkpoint com os carrinhos** |
+| Escala | 1 processo | distribui entre núcleos/máquinas |
+
+**Teste de queda (`kill -9` no meio do fluxo):** 500 carrinhos (5.514 eventos). O Spark foi derrubado sem aviso aos 35 s, ficou 15 s fora e subiu de novo com o mesmo checkpoint. Resultado: **500 de 500 carrinhos, 5.014 recomendações, 0 faltantes, 0 duplicadas**. O p95 de latência foi a ~29 s só para os eventos que chegaram enquanto ele estava fora.
+
+> O sink do Kafka garante *at-least-once*: numa queda no exato momento da escrita, uma recomendação **pode** sair duplicada. Neste teste não aconteceu, e a chave (pedido, posição) permite descartar duplicatas no consumidor final.
+
+**Métricas por minuto:** com 300 carrinhos, o job gravou duas janelas, de 1.744 e 1.700 eventos, que somam exatamente os 3.444 enviados.
+
+**Três problemas reais encontrados no caminho:**
+1. **Último item sem recomendação:** os eventos eram ordenados por (posição, tipo), mas "checkout" vem *antes* de "item_added" em ordem alfabética. O relatório mostrou ~1 faltante por carrinho.
+2. **Modelos recarregados a cada lote (~8 s):** a função rodava no módulo `__main__`, e o Spark enviava uma cópia nova dela (com cache vazio) a cada tarefa. A solução foi mover a lógica para [`cart_state.py`](src/spark_jobs/cart_state.py).
+3. **Modelos carregados por processo:** um daemon próprio ([`daemon.py`](src/spark_jobs/daemon.py)) carrega os modelos **uma vez**, antes de o PySpark criar os processos (fork). Latência p50: 5 s → 0,6 s.
+
+**Quando usar cada um:** para este volume, o consumidor Python é 100x mais rápido e mais simples. O Spark se paga quando o volume não cabe numa máquina, quando o estado não pode ser perdido numa queda, ou quando há agregações por janela de tempo.
+
+---
+
 ## 🚀 Como rodar
 
 **Pré-requisitos:** Docker Desktop (com WSL2 no Windows).
@@ -254,6 +293,22 @@ docker compose run --rm app python -m src.consumer
 
 # Terminal 2: produtor
 docker compose run --rm app python -m src.producer --orders 1000 --rate 200
+
+# Relatório: hit rate, latência, faltantes e duplicadas por recomendador
+docker compose run --rm app python -m src.stream_report --minutes 5
+```
+
+**Spark (Fase 6):** no lugar do consumidor do Terminal 1.
+
+```bash
+docker compose exec postgres psql -U instacart -d instacart -f /sql/07_streaming_tables.sql
+docker compose --profile spark build spark
+
+# Job de recomendação com estado (Spark UI em http://localhost:4040)
+docker compose run --rm --service-ports spark python -m src.spark_jobs.recommender
+
+# Job de métricas por minuto (grava em stream.*)
+docker compose run --rm --service-ports spark python -m src.spark_jobs.metrics
 ```
 
 > No Git Bash do Windows, caminhos como `/sql/...` são convertidos para caminhos do Windows. Rode os comandos `psql -f` pelo PowerShell (ou use `//sql/...`).
@@ -263,15 +318,17 @@ docker compose run --rm app python -m src.producer --orders 1000 --rate 200
 ## 📁 Estrutura
 
 ```
-├── docker-compose.yml      # Postgres, Qdrant, Kafka, Kafka UI e container Python (app)
+├── docker-compose.yml      # Postgres, Qdrant, Kafka, Kafka UI, app e Spark
 ├── Dockerfile              # imagem do app
+├── Dockerfile.spark        # imagem dos jobs Spark (oficial + nossas libs)
 ├── sql/
 │   ├── 01_create_raw.sql   # schema raw (espelho dos CSVs)
 │   ├── 02_load_raw.sql     # COPY dos CSVs
 │   ├── 03_quality_checks.sql
 │   ├── 04_create_clean.sql # schema clean (tipos, chaves, índices)
 │   ├── 05_eval_splits.sql  # schema eval (treino/teste)
-│   └── 06_association_rules.sql  # schema rules (suporte, confiança, lift)
+│   ├── 06_association_rules.sql  # schema rules (suporte, confiança, lift)
+│   └── 07_streaming_tables.sql   # schema stream (métricas do Spark)
 ├── src/
 │   ├── db.py               # conexão (lê o .env)
 │   ├── metrics.py          # precision, recall, hit rate @k
@@ -283,7 +340,14 @@ docker compose run --rm app python -m src.producer --orders 1000 --rate 200
 │   ├── events.py           # contrato dos eventos do Kafka
 │   ├── producer.py         # reencena carrinhos no Kafka
 │   ├── consumer.py         # recomenda em tempo real
-│   └── evaluate.py         # protocolos de avaliação (fases 2, 3 e 4)
+│   ├── stream_report.py    # confere os tópicos: hit rate, latência, faltantes, duplicadas
+│   ├── evaluate.py         # protocolos de avaliação (fases 2, 3 e 4)
+│   └── spark_jobs/         # Fase 6: jobs do Spark
+│       ├── common.py       # sessão Spark + leitura do Kafka
+│       ├── metrics.py      # janelas de 1 min -> Postgres
+│       ├── recommender.py  # recomendação com estado -> Kafka
+│       ├── cart_state.py   # lógica por carrinho (executada pelo Spark)
+│       └── daemon.py       # pré-carrega os modelos uma vez
 └── tests/                  # pytest
 ```
 
@@ -295,6 +359,6 @@ docker compose run --rm app python -m src.producer --orders 1000 --rate 200
 - [x] **Fase 3:** regras de associação e recomendador híbrido
 - [x] **Fase 4:** embeddings de produtos no Qdrant e busca semântica
 - [x] **Fase 5:** Kafka, produtor (replay de carrinhos) e consumidor recomendador
-- [ ] **Fase 6:** Spark Structured Streaming
+- [x] **Fase 6:** Spark Structured Streaming (estado, checkpoint, janelas e teste de queda)
 - [ ] **Fase 7:** crew de agentes (CrewAI + Claude)
 - [ ] **Fase 8:** dashboard Streamlit

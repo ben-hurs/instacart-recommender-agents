@@ -1,0 +1,30 @@
+# Imagem dos jobs do Spark (Fase 6).
+# Parte da imagem OFICIAL do Spark 4.0.1, que já traz o Java 17 e o Spark.
+# Só acrescentamos as bibliotecas Python que o nosso código usa.
+
+FROM apache/spark:4.0.1-python3
+
+USER root
+
+# pandas 2.x (e não 3.x como no app): é a versão suportada pelo PySpark 4.0.
+# pyarrow: o Spark usa para passar dados entre a JVM (Java) e o pandas (Python).
+RUN pip3 install --no-cache-dir \
+        pandas==2.2.3 \
+        pyarrow==21.0.0 \
+        sqlalchemy==2.0.44 \
+        "psycopg[binary]==3.2.12" \
+        python-dotenv==1.2.1
+
+# Deixa o "import pyspark" funcionar com o python3 comum.
+ENV PYTHONPATH=/opt/spark/python:/opt/spark/python/lib/py4j-0.10.9.9-src.zip \
+    PYSPARK_PYTHON=python3 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# A imagem só tem "python3"; criamos "python" para os comandos serem iguais aos do app.
+# E as pastas onde o Spark guarda o conector do Kafka (baixado 1 vez) e os checkpoints.
+RUN ln -sf /usr/bin/python3 /usr/local/bin/python \
+    && mkdir -p /opt/ivy /checkpoints && chown -R spark:spark /opt/ivy /checkpoints
+
+USER spark
+WORKDIR /app

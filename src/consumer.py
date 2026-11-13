@@ -94,6 +94,8 @@ def main() -> None:
     parser.add_argument("--idle-timeout", type=float, default=20,
                         help="para depois de N segundos sem mensagens (0 = nunca)")
     parser.add_argument("--group", default="recommender", help="consumer group")
+    parser.add_argument("--from-latest", action="store_true",
+                        help="grupo novo começa do FIM do tópico (ignora o histórico)")
     parser.add_argument("--rules-agg", choices=["mean", "sum"], default="mean",
                         help="como combinar as regras no híbrido (sum = versão antiga)")
     args = parser.parse_args()
@@ -106,7 +108,9 @@ def main() -> None:
     consumer = Consumer({
         "bootstrap.servers": kafka_bootstrap(),
         "group.id": args.group,              # consumidores do mesmo grupo dividem as partições
-        "auto.offset.reset": "earliest",     # grupo novo começa do início do tópico
+        # Grupo NOVO (sem offset salvo) começa do início do tópico, ou do fim com --from-latest.
+        # Grupo que já existe sempre continua de onde parou.
+        "auto.offset.reset": "latest" if args.from_latest else "earliest",
         "enable.auto.commit": True,          # salva "até onde li" automaticamente
     })
     producer = Producer({"bootstrap.servers": kafka_bootstrap(), "linger.ms": 5})

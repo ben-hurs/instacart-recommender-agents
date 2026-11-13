@@ -115,7 +115,35 @@ services:
       qdrant:
         condition: service_started
 
+  # ---------------------------------------------------------------------------
+  # Spark (Fase 6). Não sobe com "docker compose up": é usado com
+  #   docker compose run --rm --service-ports spark python -m src.spark_jobs.<job>
+  # ---------------------------------------------------------------------------
+  spark:
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    image: instacart-spark
+    profiles: ["spark"]
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    ports:
+      - "4040:4040"                      # Spark UI: http://localhost:4040
+    volumes:
+      - ./:/app
+      - instacart-spark-ivy:/opt/ivy     # conector do Kafka, baixado uma vez
+      - instacart-spark-checkpoints:/checkpoints
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
 volumes:
   instacart-postgres-data:
   instacart-qdrant-data:
   instacart-models:
+  instacart-spark-ivy:
+  instacart-spark-checkpoints:
