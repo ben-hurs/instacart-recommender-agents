@@ -1,6 +1,6 @@
 # Agentes da crew "Personal Shopper" (Fase 7).
-# Mesmo formato do módulo 4 do bootcamp (crewai/config/agents.yaml):
-# cada agente tem um papel (role), um objetivo (goal) e uma história (backstory).
+# Formato padrão do CrewAI: cada agente tem um papel (role), um objetivo (goal)
+# e uma história (backstory).
 
 analista_perfil:
   role: >

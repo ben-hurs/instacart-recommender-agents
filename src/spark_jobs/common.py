@@ -60,6 +60,10 @@ def read_cart_events(spark: SparkSession, starting_offsets: str = "latest") -> D
         .option("kafka.bootstrap.servers", kafka_bootstrap())
         .option("subscribe", TOPIC_CART_EVENTS)
         .option("startingOffsets", starting_offsets)
+        # Se o tópico for recriado (ex.: o container do Kafka foi recriado), os
+        # offsets do checkpoint deixam de existir. Em vez de travar, o Spark
+        # avisa e continua do que houver.
+        .option("failOnDataLoss", "false")
         .load()
     )
     # O Kafka entrega bytes: transformamos o JSON em colunas de verdade.

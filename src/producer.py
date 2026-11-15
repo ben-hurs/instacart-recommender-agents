@@ -74,18 +74,13 @@ def interleave(carts: list[list[CartEvent]], concurrent: int, rng: random.Random
             abertos.pop(i)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Reencena carrinhos no Kafka.")
-    parser.add_argument("--orders", type=int, default=200, help="quantos pedidos reencenar")
-    parser.add_argument("--rate", type=float, default=50, help="eventos por segundo (0 = sem limite)")
-    parser.add_argument("--concurrent", type=int, default=20, help="carrinhos abertos ao mesmo tempo")
-    parser.add_argument("--seed", type=int, default=42)
-    args = parser.parse_args()
-
-    carts = load_carts(get_engine(), args.orders, args.seed)
+def replay(orders: int = 200, rate: float = 50, concurrent: int = 20, seed: int = 42,
+           log=print) -> dict:
+    """Reencena `orders` carrinhos no Kafka. Usado pelo CLI e pelo painel."""
+    carts = load_carts(get_engine(), orders, seed)
     all_events = [cart_events(*c) for c in carts]
     total = sum(len(e) for e in all_events)
-    print(f"{len(carts)} carrinhos, {total} eventos -> tópico '{TOPIC_CART_EVENTS}'")
+    log(f"{len(carts)} carrinhos, {total} eventos -> tópico '{TOPIC_CART_EVENTS}'")
 
     producer = Producer({
         "bootstrap.servers": kafka_bootstrap(),
@@ -101,9 +96,9 @@ def main() -> None:
         if err is not None:
             erros.append(err)
 
-    intervalo = 1 / args.rate if args.rate > 0 else 0
+    intervalo = 1 / rate if rate > 0 else 0
     inicio = time.perf_counter()
-    for n, event in enumerate(interleave(all_events, args.concurrent, random.Random(args.seed)), 1):
+    for n, event in enumerate(interleave(all_events, concurrent, random.Random(seed)), 1):
         # O horário do evento é o momento do ENVIO, não o da criação do objeto
         # (todos os eventos são criados de uma vez, antes do loop).
         event = replace(event, ts=now_iso())
@@ -111,7 +106,7 @@ def main() -> None:
                          on_delivery=on_delivery)
         producer.poll(0)               # processa as confirmações pendentes
         if n % 500 == 0:
-            print(f"  {n}/{total} eventos enviados")
+            log(f"  {n}/{total} eventos enviados")
         if intervalo:
             # Controle de ritmo: espera até a hora "certa" do próximo evento.
             atraso = inicio + n * intervalo - time.perf_counter()
@@ -120,7 +115,18 @@ def main() -> None:
 
     producer.flush()                   # espera TODAS as mensagens serem confirmadas
     duracao = time.perf_counter() - inicio
-    print(f"Pronto: {total} eventos em {duracao:.1f}s ({total / duracao:.0f}/s), {len(erros)} erros")
+    log(f"Pronto: {total} eventos em {duracao:.1f}s ({total / duracao:.0f}/s), {len(erros)} erros")
+    return {"carrinhos": len(carts), "eventos": total, "segundos": duracao, "erros": len(erros)}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Reencena carrinhos no Kafka.")
+    parser.add_argument("--orders", type=int, default=200, help="quantos pedidos reencenar")
+    parser.add_argument("--rate", type=float, default=50, help="eventos por segundo (0 = sem limite)")
+    parser.add_argument("--concurrent", type=int, default=20, help="carrinhos abertos ao mesmo tempo")
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
+    replay(args.orders, args.rate, args.concurrent, args.seed)
 
 
 if __name__ == "__main__":

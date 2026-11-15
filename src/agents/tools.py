@@ -103,6 +103,16 @@ def customer_profile(user_id: int, top: int = 15) -> dict:
     }
 
 
+def _origem(do_historico: bool, das_regras: bool) -> str:
+    if do_historico and das_regras:
+        return "histórico do cliente + combina com o carrinho"
+    if do_historico:
+        return "histórico do cliente"
+    if das_regras:
+        return "combina com o carrinho"
+    return "mais vendidos (sem sinal específico)"
+
+
 def basket_suggestions(user_id: int, cart: list[int], k: int = 15) -> list[dict]:
     """Candidatos do recomendador HÍBRIDO (Fase 3), com o porquê de cada um.
 
@@ -124,9 +134,7 @@ def basket_suggestions(user_id: int, cart: list[int], k: int = 15) -> list[dict]
         saida.append({**prod,
                       "recompra_pct": round(100 * taxas.get(p, 0)),
                       "regras": round(regras.get(p, 0), 3),
-                      "origem": ("histórico do cliente" if taxas.get(p) else
-                                 "combina com o carrinho" if regras.get(p) else
-                                 "mais vendidos (sem sinal específico)")})
+                      "origem": _origem(bool(taxas.get(p)), bool(regras.get(p)))})
     return saida
 
 

@@ -1,8 +1,7 @@
 """Crew "Personal Shopper" com CrewAI + Claude (Fase 7).
 
-Padrão orquestrador-trabalhadores, como a crew de pedidos abandonados do
-módulo 4: dois especialistas levantam informação com ferramentas, e um
-curador decide e explica.
+Padrão orquestrador-trabalhadores: dois especialistas levantam informação
+com ferramentas, e um curador decide e explica.
 
     Analista de Perfil ──┐
                          ├──► Curador ──► JSON ──► guardrails ──► 5 recomendações

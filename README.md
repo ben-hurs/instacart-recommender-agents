@@ -2,9 +2,9 @@
 
 Recomendador de produtos para supermercado online, construído em fases: da engenharia de dados (Postgres) até recomendações em tempo real (Kafka + Spark) com um time de agentes de IA (CrewAI + Claude) que personaliza e explica as sugestões.
 
-Projeto de estudo baseado nos módulos 4 (Multi-Agent Systems) e 5 (Real-Time Streaming) do *AI Data Engineer Bootcamp*, aplicados a dados reais de pedidos do Instacart.
+Projeto de portfólio de engenharia de dados e IA, com dados reais de pedidos do Instacart: sistemas multiagente e processamento de dados em tempo real.
 
-> **Status:** Fases 0 a 6 concluídas ✅ · Fase 7 (agentes CrewAI + Claude) com código pronto, aguardando a primeira execução com a chave da API
+> **Status:** todas as 9 fases concluídas ✅ · painel em `http://localhost:8501` (veja [Como rodar](#-como-rodar))
 
 ---
 
@@ -29,12 +29,12 @@ Produtor (replay dos pedidos) ──► Kafka [cart-events]                     
                                      │
                        casos especiais (cliente novo, explicação)
                                      │
-                              Crew CrewAI + Claude                             🔧 Fase 7
+                              Crew CrewAI + Claude                             ✅ Fase 7
                               ├─ Analista de Perfil
                               ├─ Analista de Cesta
                               └─ Curador (orquestrador)
                                      │
-                              Dashboard Streamlit                              ⏳ Fase 8
+                              Dashboard Streamlit                              ✅ Fase 8
 ```
 
 Os agentes **não** rodam a cada evento: são caros e lentos. A recomendação rápida vem das regras e do histórico; o LLM entra só onde agrega valor (cold start, explicações).
@@ -52,7 +52,7 @@ Os agentes **não** rodam a cada evento: são caros e lentos. A recomendação r
 | Processamento distribuído | Apache Spark 4.0.1 Structured Streaming (PySpark, imagem oficial) |
 | Agentes | CrewAI 1.15 (provedor nativo da Anthropic) + Claude Opus 5.5 |
 | Testes | pytest |
-| Próxima fase | Streamlit |
+| Painel | Streamlit 1.67 + Altair |
 
 ---
 
@@ -253,7 +253,7 @@ Os mesmos eventos do Kafka, agora processados pelo Spark, em dois jobs:
 
 ## 🤖 Agentes: Personal Shopper (Fase 7)
 
-Uma crew de 3 agentes (CrewAI + Claude), no padrão **orquestrador-trabalhadores** do módulo 4:
+Uma crew de 3 agentes (CrewAI + Claude), no padrão **orquestrador-trabalhadores**:
 
 ```
 Analista de Perfil ──── perfil_do_cliente ────────────────┐
@@ -272,7 +272,7 @@ Analista de Cesta ───── sugestoes_do_carrinho (híbrido)  ─┘
 - **Os agentes não inventam dados.** Tudo vem de 4 ferramentas ([`src/agents/tools.py`](src/agents/tools.py)) que consultam o banco, as regras, o híbrido e o Qdrant. O perfil usa só o histórico de **treino**, sem vazamento.
 - **Guardrails** ([`src/agents/guardrails.py`](src/agents/guardrails.py)): a resposta final é JSON validado em Python. Um `product_id` que não apareceu nas ferramentas (alucinação), que já está no carrinho ou que se repete é **descartado**, e o que faltar é completado pelo híbrido.
 - **Plano B:** se a crew falhar (recusa do modelo, timeout, JSON inválido), o cliente recebe o híbrido. O sistema nunca fica sem resposta.
-- **Configuração em YAML** ([`config/agents.yaml`](src/agents/config/agents.yaml), [`config/tasks.yaml`](src/agents/config/tasks.yaml)), como no bootcamp.
+- **Configuração em YAML** ([`config/agents.yaml`](src/agents/config/agents.yaml), [`config/tasks.yaml`](src/agents/config/tasks.yaml)): prompts separados do código.
 - **Compatibilidade com o Claude atual:** sem `temperature` (o Claude Opus 5.5 recusa esse parâmetro) e sem `output_pydantic` do CrewAI (ele força uma ferramenta via `tool_choice`, o que o modelo também recusa). Por isso o JSON é validado pelos guardrails.
 - **Telemetria do CrewAI desligada** (`CREWAI_DISABLE_TELEMETRY`).
 
@@ -284,6 +284,28 @@ docker compose run --rm app python -m src.agents.run --exemplo antigo --desejo "
 ```
 
 Os exemplos usam os 3 primeiros itens de um pedido de **teste** e mostram quantas sugestões o cliente realmente comprou depois, comparando com o híbrido sozinho. Também mostram os tokens e o custo estimado de cada execução.
+
+**Na prática:** a crew funciona de ponta a ponta, mas é **lenta e cara** comparada ao híbrido. Numa execução real (cliente novo): **76 s, 15 chamadas ao modelo, 32,8 mil tokens de entrada e 9,5 mil de saída, cerca de US$ 0,32**, contra 0,1 ms e custo zero do híbrido. Isso confirma a decisão de arquitetura: agentes só sob demanda (cliente novo, pedido em texto, explicação), nunca no caminho de cada clique.
+
+---
+
+## 📺 Painel (Fase 8)
+
+Streamlit em `http://localhost:8501`, com 4 páginas:
+
+| Página | O que mostra | De onde vêm os dados |
+|---|---|---|
+| **Visão geral** | números do dataset, arquitetura, achados da limpeza | Postgres |
+| **Avaliação** | ranking dos recomendadores (próximo pedido e carrinho parcial com 3 ou 10 itens), com o melhor destacado | `reports/*.csv` do `src.evaluate` |
+| **Ao vivo** | botão que simula carrinhos no Kafka; as últimas recomendações e as métricas por minuto, atualizando a cada 5 s | tópico `recommendations` + tabelas `stream.*` do Spark |
+| **Experimente** | escolha um cliente, monte um carrinho com a busca semântica, veja o híbrido na hora e peça a explicação aos agentes | ferramentas da Fase 7 + crew |
+
+Detalhes:
+- O "Ao vivo" usa `st.fragment(run_every=5)`: só aquele trecho da página se atualiza, sem recarregar o resto.
+- Consultas com `st.cache_data(ttl=...)`: cada clique não refaz as consultas no banco.
+- O botão dos agentes só aparece habilitado com `ANTHROPIC_API_KEY`, e avisa que cada pedido tem custo.
+- Os serviços `dashboard` e `consumer` reaproveitam a configuração do `app` com uma **âncora YAML** (`<<: *app`), sem repetir variáveis.
+- **Todas as portas publicadas só em `127.0.0.1`**: Postgres, Kafka e o painel não ficam expostos para a rede local.
 
 ---
 
@@ -318,6 +340,16 @@ docker compose run --rm app python -m src.evaluate --fase 3 --cart-size 10   # c
 ```
 
 Painel do Qdrant: http://localhost:6333/dashboard
+
+**Painel (Fase 8):** o jeito mais rápido de ver tudo funcionando.
+
+```bash
+docker compose up -d kafka kafka-init kafka-ui dashboard consumer
+# http://localhost:8501  (página "Ao vivo" -> Simular carrinhos)
+
+# opcional, para as métricas por minuto na página "Ao vivo":
+docker compose --profile spark run -d --name spark-metrics spark python -m src.spark_jobs.metrics
+```
 
 **Streaming (Fase 5):** dois terminais.
 
@@ -384,7 +416,13 @@ docker compose run --rm --service-ports spark python -m src.spark_jobs.metrics
 │   │   ├── tools.py        # o que os agentes podem consultar (sem LLM)
 │   │   ├── crew.py         # agentes, tarefas e ferramentas do CrewAI
 │   │   ├── guardrails.py   # valida o JSON e descarta alucinações
+│   │   ├── service.py      # a crew como função (usada pelo CLI e pelo painel)
 │   │   └── run.py          # roda a crew e compara com o gabarito
+│   ├── dashboard/          # Fase 8: painel Streamlit
+│   │   ├── app.py          # navegação entre as 4 páginas
+│   │   ├── pages.py        # Visão geral, Avaliação, Ao vivo, Experimente
+│   │   ├── data.py         # consultas com cache (Postgres e Kafka)
+│   │   └── charts.py       # gráficos Altair
 │   └── spark_jobs/         # Fase 6: jobs do Spark
 │       ├── common.py       # sessão Spark + leitura do Kafka
 │       ├── metrics.py      # janelas de 1 min -> Postgres
@@ -403,5 +441,5 @@ docker compose run --rm --service-ports spark python -m src.spark_jobs.metrics
 - [x] **Fase 4:** embeddings de produtos no Qdrant e busca semântica
 - [x] **Fase 5:** Kafka, produtor (replay de carrinhos) e consumidor recomendador
 - [x] **Fase 6:** Spark Structured Streaming (estado, checkpoint, janelas e teste de queda)
-- [ ] **Fase 7:** crew de agentes (CrewAI + Claude): código e guardrails prontos; falta a execução com a chave
-- [ ] **Fase 8:** dashboard Streamlit
+- [x] **Fase 7:** crew de agentes (CrewAI + Claude) com ferramentas, guardrails e plano B
+- [x] **Fase 8:** painel Streamlit (avaliação, streaming ao vivo e recomendador interativo)

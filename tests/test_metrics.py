@@ -12,7 +12,7 @@ COMPRADOS = {LEITE, PAO, OVOS, BANANA}
 RECOMENDADOS = [LEITE, 101, 102, BANANA, 103, 104, 105, 106, 107, 108]
 
 
-def test_exemplo_da_aula():
+def test_exemplo_leite_pao_ovos_banana():
     assert precision_at_k(RECOMENDADOS, COMPRADOS, k=10) == pytest.approx(0.20)
     assert recall_at_k(RECOMENDADOS, COMPRADOS, k=10) == pytest.approx(0.50)
     assert hit_rate_at_k(RECOMENDADOS, COMPRADOS, k=10) == 1.0

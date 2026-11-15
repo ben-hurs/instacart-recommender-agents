@@ -20,18 +20,14 @@ usados e o custo estimado.
 """
 
 import argparse
-import os
-import time
 
 import pandas as pd
 from sqlalchemy import text
 
 from src.agents import tools as T
-from src.agents.guardrails import N_RECOMENDACOES, complete, ground, parse_final_answer
+from src.agents.guardrails import N_RECOMENDACOES
+from src.agents.service import recommend_with_crew
 from src.db import get_engine
-
-# Preço do Claude Opus 5.5 (US$ por milhão de tokens: entrada, saída).
-PRECO_MTOK = {"claude-opus-5-5": (4.0, 20.0)}
 
 SQL_EXEMPLO = text("""
     WITH pedidos AS (
@@ -69,9 +65,6 @@ def main() -> None:
     parser.add_argument("--desejo", default="", help="pedido em texto livre (opcional)")
     args = parser.parse_args()
 
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        raise SystemExit("Falta ANTHROPIC_API_KEY no arquivo .env (veja o .env.example).")
-
     gabarito: list[int] = []
     if args.exemplo:
         user_id, carrinho, gabarito = carregar_exemplo(args.exemplo, args.seed)
@@ -80,61 +73,49 @@ def main() -> None:
     else:
         raise SystemExit("Use --exemplo novo|antigo, ou --user e --carrinho.")
 
-    nomes = T.describe_products(carrinho)
-    carrinho_texto = ", ".join(p["nome"] for p in nomes)
-    print(f"\nCliente {user_id} | carrinho: {carrinho_texto}")
+    print(f"\nCliente {user_id} | carrinho: "
+          + ", ".join(p["nome"] for p in T.describe_products(carrinho)))
     if args.desejo:
         print(f"Pedido do cliente: {args.desejo}")
 
-    # A reserva (híbrido) é calculada SEM LLM: serve de complemento e de plano B.
-    reserva = T.basket_suggestions(user_id, carrinho, k=15)
-
-    from src.agents import crew as C          # importa o CrewAI só aqui (é pesado)
-    C.VISTOS.clear()
-    inicio = time.perf_counter()
-    descartadas, resumo, uso = [], "", None
     try:
-        resultado = C.build_crew().kickoff(inputs={
-            "user_id": user_id,
-            "carrinho_ids": carrinho,
-            "carrinho_texto": carrinho_texto,
-            "desejo": args.desejo or "(nenhum)",
-        })
-        uso = resultado.token_usage
-        dados = parse_final_answer(resultado.raw)
-        validas, descartadas = ground(dados["recomendacoes"], C.VISTOS, set(carrinho))
-        resumo = dados.get("resumo", "")
-        final = complete(validas, reserva, N_RECOMENDACOES)
-    except Exception as erro:                   # recusa, timeout, JSON inválido...
-        print(f"\n⚠️  A crew falhou ({type(erro).__name__}: {erro}). Usando o híbrido como plano B.")
-        final = complete([], reserva, N_RECOMENDACOES)
-    duracao = time.perf_counter() - inicio
+        r = recommend_with_crew(user_id, carrinho, args.desejo)
+    except RuntimeError as erro:
+        raise SystemExit(str(erro))
 
+    if r["erro"]:
+        print(f"\n⚠️  A crew falhou ({r['erro']}). Usando o híbrido como plano B.")
     print("\n" + "=" * 70)
     print(f"RECOMENDAÇÕES PARA O CLIENTE {user_id}")
-    if resumo:
-        print(f"\"{resumo}\"")
-    for i, r in enumerate(final, 1):
-        acerto = " ✅ comprou!" if r["product_id"] in gabarito else ""
-        print(f"{i}. {r['nome']}  [{r['origem']}]{acerto}\n   {r['motivo']}")
-    if descartadas:
-        print(f"\nGuardrail descartou {len(descartadas)} sugestão(ões) inválida(s): {descartadas}")
+    if r["resumo"]:
+        print(f"\"{r['resumo']}\"")
+    for i, rec in enumerate(r["recomendacoes"], 1):
+        acerto = " ✅ comprou!" if rec["product_id"] in gabarito else ""
+        print(f"{i}. {rec['nome']}  [{rec['origem']}]{acerto}\n   {rec['motivo']}")
+    if r["descartadas"]:
+        print(f"\nGuardrail descartou {len(r['descartadas'])} sugestão(ões) inválida(s): {r['descartadas']}")
 
     if gabarito:
-        acertos_crew = sum(r["product_id"] in gabarito for r in final)
-        acertos_hib = sum(r["product_id"] in gabarito for r in reserva[:N_RECOMENDACOES])
+        acertos_crew = sum(x["product_id"] in gabarito for x in r["recomendacoes"])
+        acertos_hib = sum(x["product_id"] in gabarito for x in r["reserva"][:N_RECOMENDACOES])
         print(f"\nGabarito: o cliente comprou mais {len(gabarito)} itens depois desses 3.")
         print(f"Acertos em 5: crew = {acertos_crew} | híbrido sozinho = {acertos_hib}")
 
-    print(f"\nTempo: {duracao:.0f}s", end="")
-    if uso is not None:
-        entrada, saida = uso.prompt_tokens, uso.completion_tokens
-        preco = PRECO_MTOK.get(C.MODEL)
-        custo = f" | custo estimado: US$ {entrada / 1e6 * preco[0] + saida / 1e6 * preco[1]:.3f}" if preco else ""
-        print(f" | chamadas ao Claude: {uso.successful_requests} | tokens: {entrada:,} entrada, "
-              f"{saida:,} saída{custo}")
+    print(f"\nTempo: {r['segundos']:.0f}s", end="")
+    if r["tokens"]:
+        t = r["tokens"]
+        custo = f" | custo estimado: US$ {r['custo_usd']:.3f}" if r["custo_usd"] is not None else ""
+        print(f" | chamadas ao Claude: {t['chamadas']} | tokens: {t['entrada']:,} entrada, "
+              f"{t['saida']:,} saída{custo}")
     print()
 
 
 if __name__ == "__main__":
     main()
+    # O CrewAI deixa threads de fundo abertas (eventos/telemetria) e o processo
+    # não terminava sozinho depois de imprimir o resultado: o container ficava
+    # "Up" para sempre. Encerramos explicitamente, depois de tudo impresso.
+    import os
+    import sys
+    sys.stdout.flush()
+    os._exit(0)
