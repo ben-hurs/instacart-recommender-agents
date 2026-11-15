@@ -4,7 +4,7 @@ Recomendador de produtos para supermercado online, construído em fases: da enge
 
 Projeto de estudo baseado nos módulos 4 (Multi-Agent Systems) e 5 (Real-Time Streaming) do *AI Data Engineer Bootcamp*, aplicados a dados reais de pedidos do Instacart.
 
-> **Status:** Fases 0 a 6 concluídas ✅ · próxima: Fase 7 (agentes CrewAI + Claude)
+> **Status:** Fases 0 a 6 concluídas ✅ · Fase 7 (agentes CrewAI + Claude) com código pronto, aguardando a primeira execução com a chave da API
 
 ---
 
@@ -29,7 +29,7 @@ Produtor (replay dos pedidos) ──► Kafka [cart-events]                     
                                      │
                        casos especiais (cliente novo, explicação)
                                      │
-                              Crew CrewAI + Claude                             ⏳ Fase 7
+                              Crew CrewAI + Claude                             🔧 Fase 7
                               ├─ Analista de Perfil
                               ├─ Analista de Cesta
                               └─ Curador (orquestrador)
@@ -50,8 +50,9 @@ Os agentes **não** rodam a cada evento: são caros e lentos. A recomendação r
 | Busca vetorial | Qdrant 1.20 + fastembed (`BAAI/bge-small-en-v1.5`, local na CPU) |
 | Streaming | Apache Kafka 4.1 (KRaft, sem Zookeeper) + confluent-kafka + Kafka UI |
 | Processamento distribuído | Apache Spark 4.0.1 Structured Streaming (PySpark, imagem oficial) |
+| Agentes | CrewAI 1.15 (provedor nativo da Anthropic) + Claude Opus 5.5 |
 | Testes | pytest |
-| Próximas fases | CrewAI, Claude, Streamlit |
+| Próxima fase | Streamlit |
 
 ---
 
@@ -250,6 +251,42 @@ Os mesmos eventos do Kafka, agora processados pelo Spark, em dois jobs:
 
 ---
 
+## 🤖 Agentes: Personal Shopper (Fase 7)
+
+Uma crew de 3 agentes (CrewAI + Claude), no padrão **orquestrador-trabalhadores** do módulo 4:
+
+```
+Analista de Perfil ──── perfil_do_cliente ────────────────┐
+                                                           ├──► Curador ──► JSON ──► guardrails ──► 5 sugestões explicadas
+Analista de Cesta ───── sugestoes_do_carrinho (híbrido)  ─┘
+                        complementos_do_produto (regras)
+                        busca_semantica (Qdrant)
+```
+
+**Onde os agentes entram (e onde não):** eles **não** substituem o recomendador em tempo real. O híbrido responde em 0,1 ms; a crew leva segundos e custa dinheiro a cada execução. A crew serve onde o híbrido é fraco:
+- **cliente novo** (cold start): sem histórico, o híbrido devolve os mais vendidos;
+- **pedido em texto livre** ("vou fazer um churrasco"): só a busca semântica entende;
+- **explicação** em português de cada sugestão, citando a evidência.
+
+**Decisões de projeto:**
+- **Os agentes não inventam dados.** Tudo vem de 4 ferramentas ([`src/agents/tools.py`](src/agents/tools.py)) que consultam o banco, as regras, o híbrido e o Qdrant. O perfil usa só o histórico de **treino**, sem vazamento.
+- **Guardrails** ([`src/agents/guardrails.py`](src/agents/guardrails.py)): a resposta final é JSON validado em Python. Um `product_id` que não apareceu nas ferramentas (alucinação), que já está no carrinho ou que se repete é **descartado**, e o que faltar é completado pelo híbrido.
+- **Plano B:** se a crew falhar (recusa do modelo, timeout, JSON inválido), o cliente recebe o híbrido. O sistema nunca fica sem resposta.
+- **Configuração em YAML** ([`config/agents.yaml`](src/agents/config/agents.yaml), [`config/tasks.yaml`](src/agents/config/tasks.yaml)), como no bootcamp.
+- **Compatibilidade com o Claude atual:** sem `temperature` (o Claude Opus 5.5 recusa esse parâmetro) e sem `output_pydantic` do CrewAI (ele força uma ferramenta via `tool_choice`, o que o modelo também recusa). Por isso o JSON é validado pelos guardrails.
+- **Telemetria do CrewAI desligada** (`CREWAI_DISABLE_TELEMETRY`).
+
+**Como rodar:** coloque `ANTHROPIC_API_KEY` no `.env` (veja o `.env.example`).
+
+```bash
+docker compose run --rm app python -m src.agents.run --exemplo novo
+docker compose run --rm app python -m src.agents.run --exemplo antigo --desejo "vou fazer um churrasco"
+```
+
+Os exemplos usam os 3 primeiros itens de um pedido de **teste** e mostram quantas sugestões o cliente realmente comprou depois, comparando com o híbrido sozinho. Também mostram os tokens e o custo estimado de cada execução.
+
+---
+
 ## 🚀 Como rodar
 
 **Pré-requisitos:** Docker Desktop (com WSL2 no Windows).
@@ -342,6 +379,12 @@ docker compose run --rm --service-ports spark python -m src.spark_jobs.metrics
 │   ├── consumer.py         # recomenda em tempo real
 │   ├── stream_report.py    # confere os tópicos: hit rate, latência, faltantes, duplicadas
 │   ├── evaluate.py         # protocolos de avaliação (fases 2, 3 e 4)
+│   ├── agents/             # Fase 7: crew Personal Shopper
+│   │   ├── config/         # agents.yaml e tasks.yaml
+│   │   ├── tools.py        # o que os agentes podem consultar (sem LLM)
+│   │   ├── crew.py         # agentes, tarefas e ferramentas do CrewAI
+│   │   ├── guardrails.py   # valida o JSON e descarta alucinações
+│   │   └── run.py          # roda a crew e compara com o gabarito
 │   └── spark_jobs/         # Fase 6: jobs do Spark
 │       ├── common.py       # sessão Spark + leitura do Kafka
 │       ├── metrics.py      # janelas de 1 min -> Postgres
@@ -360,5 +403,5 @@ docker compose run --rm --service-ports spark python -m src.spark_jobs.metrics
 - [x] **Fase 4:** embeddings de produtos no Qdrant e busca semântica
 - [x] **Fase 5:** Kafka, produtor (replay de carrinhos) e consumidor recomendador
 - [x] **Fase 6:** Spark Structured Streaming (estado, checkpoint, janelas e teste de queda)
-- [ ] **Fase 7:** crew de agentes (CrewAI + Claude)
+- [ ] **Fase 7:** crew de agentes (CrewAI + Claude): código e guardrails prontos; falta a execução com a chave
 - [ ] **Fase 8:** dashboard Streamlit

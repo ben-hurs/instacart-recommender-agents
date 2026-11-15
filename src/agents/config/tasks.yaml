@@ -1,0 +1,47 @@
+# Tarefas da crew (Fase 7). As {variáveis} são preenchidas no crew.kickoff(inputs=...).
+# Processo sequencial: perfil -> cesta -> curadoria (que recebe as duas como contexto).
+
+tarefa_perfil:
+  description: >
+    Analise o cliente de user_id {user_id} com a ferramenta de perfil.
+    Resuma em poucas linhas: se é cliente novo, quantos pedidos tem no
+    histórico, os produtos que mais compra (com product_id, nome e % dos
+    pedidos) e os departamentos favoritos.
+  expected_output: >
+    Um resumo curto do perfil, com os product_ids e nomes dos produtos
+    favoritos, ou a indicação clara de que o cliente é novo.
+
+tarefa_cesta:
+  description: >
+    O carrinho atual do cliente {user_id} tem estes produtos (product_ids
+    {carrinho_ids}): {carrinho_texto}.
+    Pedido do cliente em texto livre: "{desejo}".
+
+    1. Use a ferramenta de sugestões do carrinho com o user_id e os product_ids do carrinho.
+    2. Use a ferramenta de complementos para 1 ou 2 itens do carrinho que pareçam mais importantes.
+    3. Se o pedido em texto livre não estiver vazio, traduza-o para o inglês e use a
+       busca semântica do catálogo.
+
+    Monte uma lista de 10 a 15 candidatos que NÃO estão no carrinho.
+  expected_output: >
+    Uma lista de candidatos, cada um com product_id, nome e a evidência que
+    justifica a sugestão (de qual ferramenta veio e o número que a apoia).
+
+tarefa_curadoria:
+  description: >
+    Com base no perfil do cliente e nos candidatos levantados, escolha as 5
+    melhores sugestões para o cliente {user_id}, cujo carrinho tem
+    {carrinho_texto}. Pedido do cliente: "{desejo}".
+
+    Regras:
+    - Use somente product_ids que aparecem nas análises anteriores, e nunca um que já está no carrinho.
+    - Se o cliente tem histórico, inclua o que ele costuma comprar e ainda não pôs no carrinho.
+    - Se houver um pedido em texto livre, atenda a ele com pelo menos 2 sugestões.
+    - Cada motivo deve ser uma frase curta em português, citando a evidência
+      (ex.: "Você compra em 60% dos seus pedidos").
+
+    Responda apenas com um objeto JSON neste formato, sem texto antes ou depois:
+    {{"recomendacoes": [{{"product_id": 123, "nome": "...", "motivo": "..."}}], "resumo": "uma frase para o cliente"}}
+  expected_output: >
+    Um objeto JSON com a chave "recomendacoes" (lista de 5 itens com
+    product_id, nome e motivo) e a chave "resumo".

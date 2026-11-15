@@ -106,6 +106,9 @@ services:
       QDRANT_PORT: "6333"
       FASTEMBED_CACHE_PATH: /models
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Fase 7: o CrewAI envia telemetria anônima por padrão; desligamos.
+      CREWAI_DISABLE_TELEMETRY: "true"
+      OTEL_SDK_DISABLED: "true"
     volumes:
       - ./:/app
       - instacart-models:/models
