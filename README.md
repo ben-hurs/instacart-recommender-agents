@@ -306,7 +306,7 @@ Detalhes:
 - O botão dos agentes só aparece habilitado com `ANTHROPIC_API_KEY`, e avisa que cada pedido tem custo.
 - Os serviços `dashboard` e `consumer` reaproveitam a configuração do `app` com uma **âncora YAML** (`<<: *app`), sem repetir variáveis.
 - **Todas as portas publicadas só em `127.0.0.1`**: Postgres, Kafka e o painel não ficam expostos para a rede local.
-- **Design:** segue um `DESIGN.md` (linguagem visual inspirada no Stripe). Tema em `.streamlit/config.toml` (cores, fonte Inter, botões em pílula) e o resto em `src/dashboard/styles.py` (topo com degradê, títulos finos, números tabulares, painel escuro da arquitetura). As cores dos gráficos (índigo + rosa de destaque) passaram num validador de paleta para daltonismo.
+- **Design "Mercado dos Dados":** o painel parece um encarte de supermercado (descrito no `DESIGN.md`). Cada página é um corredor com placa, os números são etiquetas de preço amarelas e a arquitetura é um cupom fiscal. Tema em `.streamlit/config.toml` (fontes Archivo e IBM Plex Mono) e as peças em `src/dashboard/styles.py`. As cores dos gráficos (verde + vermelho de destaque) passaram num validador de paleta para daltonismo.
 
 ---
 

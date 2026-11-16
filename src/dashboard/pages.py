@@ -1,6 +1,6 @@
 """As 4 páginas do painel (Fase 8). Cada página é uma função.
 
-O visual (topo com degradê, títulos de seção, painel escuro) vem de styles.py.
+O visual ("encarte de supermercado": placa de corredor, etiquetas, cupom) vem de styles.py.
 """
 
 import os
@@ -31,40 +31,48 @@ def br_curto(n: float) -> str:
 # 1. Visão geral
 # =============================================================================
 
-ARQUITETURA = """\
-# lote: dados históricos
-CSVs ─► Postgres (raw → clean) ─► recompra + regras de associação ─► híbrido
-                               └► embeddings dos produtos ─► Qdrant (busca semântica)
-
-# tempo real
-Produtor ─► Kafka [cart-events] ─► consumidor Python ou Spark ─► Kafka [recommendations]
-                                   └► métricas por minuto (Spark) ─► Postgres
-
-# sob demanda
-Crew de agentes (CrewAI + Claude) ─► 5 sugestões explicadas"""
+# A arquitetura, contada como os itens de um cupom fiscal.
+ARQUITETURA = [
+    ("CSVs → Postgres", "raw → clean"),
+    ("Recompra + regras A→B", "híbrido"),
+    ("Embeddings → Qdrant", "busca semântica"),
+    ("Produtor → Kafka", "cart-events"),
+    ("Consumidor ou Spark", "recommendations"),
+    ("Spark → Postgres", "métricas/min"),
+    ("CrewAI + Claude", "sob demanda"),
+]
 
 
 def visao_geral() -> None:
     styles.hero(
-        "Projeto de portfólio · dados e IA",
-        "O que mais vai para o carrinho?",
-        "Enquanto o cliente monta o carrinho, o sistema sugere o que ele provavelmente ainda vai "
-        "comprar, e mede com números se as sugestões são boas. Engenharia de dados, "
-        "recomendadores clássicos, busca semântica, streaming em tempo real e agentes de IA.",
+        1, "Visão geral", "dados · recomendação · streaming · agentes",
+        "O que mais vai pro", "carrinho?",
+        "Um recomendador de supermercado com dados reais do Instacart: sugere o próximo item "
+        "enquanto o cliente ainda está comprando, e mede com números se as sugestões são boas.",
     )
 
     k = data.kpis()
     cols = st.columns(5)
     for col, (rotulo, valor) in zip(cols, [
-        ("Clientes", k["clientes"]), ("Pedidos", k["pedidos"]), ("Itens em carrinhos", k["itens"]),
+        ("Clientes", k["clientes"]), ("Pedidos", k["pedidos"]), ("Itens", k["itens"]),
         ("Produtos", k["produtos"]), ("Regras A → B", k["regras"]),
     ]):
         col.metric(rotulo, br_curto(valor))
 
-    styles.secao("Arquitetura", "Do CSV à recomendação em milissegundos",
-                 "Um caminho em lote, que aprende com o histórico, e um em tempo real, que "
-                 "responde a cada item colocado no carrinho.")
-    styles.painel_escuro("pipeline", ARQUITETURA)
+    styles.secao("Arquitetura", "Do CSV à recomendação em milissegundos")
+    texto, cupom = st.columns([6, 5], gap="large")
+    with texto:
+        st.markdown(
+            "**Em lote** (1 a 3): o histórico vira tabelas limpas no Postgres, regras de "
+            "associação \"quem leva A também leva B\" e vetores de busca semântica no Qdrant.\n\n"
+            "**Em tempo real** (4 a 6): cada item colocado no carrinho vira um evento no Kafka; "
+            "o recomendador responde em milissegundos e o Spark conta tudo por minuto.\n\n"
+            "**Sob demanda** (7): uma equipe de agentes de IA lê o perfil e o carrinho e "
+            "explica cada sugestão. Mais lenta e com custo, por isso só quando agrega."
+        )
+    with cupom:
+        styles.cupom("MERCADO DOS DADOS", "como funciona", ARQUITETURA,
+                     ("TOTAL", "carrinho cheio"), "volte sempre :)")
 
     styles.secao("Qualidade dos dados", "O que a limpeza encontrou",
                  "Cada achado foi investigado antes de decidir o tratamento.")
@@ -76,13 +84,13 @@ def visao_geral() -> None:
         ("28.906 pedidos sem itens", "Amostra incompleta", "Fora da avaliação"),
     ], columns=["Achado", "Interpretação", "Tratamento"]), hide_index=True, width="stretch")
 
-    styles.secao("Explore", "Próximos passos")
+    styles.secao("Mapa da loja", "Os outros corredores")
     for col, (icone, titulo, texto) in zip(st.columns(3), [
-        (":material/insights:", "Avaliação", "Qual recomendador acerta mais, medido em compras reais escondidas."),
-        (":material/sensors:", "Ao vivo", "Simule carrinhos e veja o Kafka e o Spark respondendo em tempo real."),
-        (":material/shopping_basket:", "Experimente", "Monte um carrinho e compare o híbrido com os agentes de IA."),
+        (":material/sell:", "02 · Avaliação", "Qual recomendador acerta mais, medido em compras reais escondidas."),
+        (":material/sensors:", "03 · Ao vivo", "Simule carrinhos e veja o Kafka e o Spark respondendo em tempo real."),
+        (":material/shopping_cart:", "04 · Experimente", "Monte um carrinho e compare o híbrido com os agentes de IA."),
     ]):
-        with col.container(key=f"cartao-{titulo}"):
+        with col.container(key=f"cartao-{titulo[:2]}"):
             st.markdown(f"**{icone} {titulo}**")
             st.caption(texto)
     st.caption("Use o menu à esquerda para navegar.")
@@ -99,11 +107,11 @@ def _sem_relatorio(arquivo: str, comando: str) -> None:
 
 def avaliacao() -> None:
     styles.hero(
-        "Avaliação offline",
-        "Quem acerta mais?",
+        2, "Avaliação", "comparação com compras reais",
+        "Quem acerta", "mais?",
         "Para cada cliente, a última compra foi <b>escondida</b> e o recomendador teve que "
         "adivinhá-la usando só o passado. Precisão@10 = das 10 sugestões, quantas o cliente "
-        "realmente comprou. Em <b style=\"color:#ea2261\">rosa</b>, o melhor de cada gráfico.",
+        "realmente comprou. Em <b style=\"color:#e2231a\">vermelho de oferta</b>, o melhor de cada gráfico.",
     )
 
     styles.secao("Protocolo 1", "Próximo pedido, pelo histórico",
@@ -162,8 +170,8 @@ def _simular(n: int) -> None:
 
 def ao_vivo() -> None:
     styles.hero(
-        "Streaming · Kafka + Spark",
-        "Recomendações em tempo real",
+        3, "Ao vivo", "Kafka + Spark Structured Streaming",
+        "Recomendações em", "tempo real",
         "Cada item colocado num carrinho vira um evento no Kafka. O consumidor recomendador "
         "responde em milissegundos, e o job de métricas do Spark conta tudo por minuto.",
     )
@@ -252,8 +260,8 @@ def experimente() -> None:
     from src.agents import tools as T
 
     styles.hero(
-        "Experimente",
-        "Monte um carrinho",
+        4, "Experimente", "monte o seu carrinho",
+        "Pode pegar um", "carrinho",
         "Escolha um cliente, adicione produtos e compare duas formas de recomendar: o híbrido, "
         "instantâneo e grátis, e a equipe de agentes de IA, que explica cada sugestão.",
     )
@@ -298,7 +306,7 @@ def experimente() -> None:
         st.caption("Carrinho vazio. Busque e adicione pelo menos um produto.")
         return
     with st.container(key="cartao-carrinho"):
-        st.markdown(f"**:material/shopping_basket: Carrinho** :gray[· {len(carrinho)} "
+        st.markdown(f"**:material/shopping_cart: Seu carrinho** :gray[· {len(carrinho)} "
                     f"{'item' if len(carrinho) == 1 else 'itens'}]")
         for prod in T.describe_products(carrinho):
             c1, c2 = st.columns([5, 1], vertical_alignment="center")
@@ -338,10 +346,9 @@ def experimente() -> None:
             r = recommend_with_crew(user_id, carrinho, desejo)
         if r["erro"]:
             st.error(f"A crew falhou ({r['erro']}). Mostrando o híbrido como plano B.")
-        with st.container(key="cartao-agentes"):
-            if r["resumo"]:
-                st.markdown(f"_{r['resumo']}_")
-            styles.recomendacoes(r["recomendacoes"])
+        _, meio, _ = st.columns([1, 3, 1])
+        with meio:
+            styles.recomendacoes(r["recomendacoes"], r["resumo"])
         if r["descartadas"]:
             st.caption(f"Os guardrails descartaram {len(r['descartadas'])} sugestão(ões) inválida(s).")
         if r["tokens"]:

@@ -2,32 +2,32 @@
 
 Regras seguidas:
   - barras horizontais finas, um eixo só, grade discreta;
-  - uma cor por gráfico de uma série (índigo); o destaque usa o ruby do DESIGN.md
-    (o par índigo/ruby passou no validador de paleta: legível também por quem
+  - uma cor por gráfico de uma série (verde); o destaque usa o vermelho de oferta
+    (o par #1f7a4f/#e2231a passou no validador de paleta: legível também por quem
     tem daltonismo);
   - tooltip em toda marca (passe o mouse);
   - rótulos de valor só onde ajudam a ler;
-  - texto dos eixos em cinza-azulado (ink-mute), nunca na cor da série.
+  - texto dos eixos em cinza quente, nunca na cor da série.
 """
 
 import altair as alt
 import pandas as pd
 
-INDIGO = "#533afd"    # série principal
-RUBY = "#ea2261"      # destaque (o melhor resultado)
-TINTA = "#0d253d"
-MUDO = "#64748d"
-HAIRLINE = "#e3e8ee"
-FONTE = "Inter"
+VERDE = "#1f7a4f"     # série principal (verde de mercado)
+VERMELHO = "#e2231a"  # destaque (o melhor resultado), como etiqueta de oferta
+TINTA = "#1b1a17"
+MUDO = "#6b665c"
+HAIRLINE = "#e8e0cf"
+FONTE = "Archivo"
 
 
 def _estilo(chart: alt.Chart) -> alt.Chart:
     """Fonte, cores de eixo e grade iguais em todos os gráficos."""
     # padding: folga extra à esquerda. O Vega mede os rótulos antes de a fonte
-    # Inter terminar de carregar e, sem folga, cortava o começo do texto.
+    # do tema terminar de carregar e, sem folga, cortava o começo do texto.
     return (chart
             .properties(padding={"left": 24, "right": 8, "top": 4, "bottom": 4})
-            .configure(font=FONTE)
+            .configure(font=FONTE, background="transparent")   # usa o papel do cartão
             .configure_view(stroke=None)
             .configure_axis(labelColor=MUDO, titleColor=MUDO, labelFontSize=12, titleFontSize=12,
                             titleFontWeight=400, domainColor=HAIRLINE, tickColor=HAIRLINE,
@@ -50,7 +50,7 @@ def ranking(df: pd.DataFrame, rotulo: str, valor: str, titulo_valor: str,
                  alt.Tooltip(f"{valor}:Q", title=titulo_valor, format=formato)],
     )
     barras = base.mark_bar(cornerRadiusEnd=4, height=16).encode(
-        color=alt.condition("datum.destaque", alt.value(RUBY), alt.value(INDIGO)),
+        color=alt.condition("datum.destaque", alt.value(VERMELHO), alt.value(VERDE)),
     )
     rotulos = base.mark_text(align="left", dx=6, color=MUDO, fontSize=12).encode(
         text=alt.Text(f"{valor}:Q", format=formato),
@@ -68,6 +68,6 @@ def linha_tempo(df: pd.DataFrame, x: str, y: str, titulo_y: str) -> alt.Chart:
         tooltip=[alt.Tooltip(f"{x}:T", title="Minuto", format="%H:%M"),
                  alt.Tooltip(f"{y}:Q", title=titulo_y)],
     )
-    linha = base.mark_line(color=INDIGO, strokeWidth=2)
-    pontos = base.mark_point(color=INDIGO, filled=True, size=60, stroke="#fff", strokeWidth=2)
+    linha = base.mark_line(color=VERDE, strokeWidth=2)
+    pontos = base.mark_point(color=VERDE, filled=True, size=60, stroke="#fff", strokeWidth=2)
     return _estilo((linha + pontos).properties(height=240))

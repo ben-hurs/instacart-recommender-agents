@@ -1,36 +1,41 @@
-# Tema do painel, seguindo o DESIGN.md (estilo Stripe):
-# tinta azul-marinho (nunca preto puro), índigo só para ações, fundo branco,
-# bordas finas (hairline) e fonte Inter (substituta aberta da Sohne).
+# Tema do painel: "encarte de supermercado", o mesmo visual da capa do vídeo.
+# Verde de placa de corredor, vermelho de oferta, amarelo de etiqueta de preço,
+# fundo creme de papel. Fonte Archivo (títulos pesados de encarte) e
+# IBM Plex Mono (números, como num cupom fiscal).
 [theme]
 base = "light"
-primaryColor = "#533afd"              # índigo: botões e links
-backgroundColor = "#ffffff"           # canvas
-secondaryBackgroundColor = "#f6f9fc"  # canvas-soft: campos, sidebar
-textColor = "#0d253d"                 # ink
-linkColor = "#533afd"
+primaryColor = "#e2231a"              # vermelho de oferta: botões principais
+backgroundColor = "#f4eee2"           # creme
+secondaryBackgroundColor = "#fffdf7"  # papel: campos e tabelas
+textColor = "#1b1a17"
+linkColor = "#0b5d3b"
 linkUnderline = false
-borderColor = "#e3e8ee"               # hairline
-dataframeBorderColor = "#e3e8ee"
-dataframeHeaderBackgroundColor = "#f6f9fc"
+borderColor = "#e2d9c6"
+dataframeBorderColor = "#e8e0cf"
+dataframeHeaderBackgroundColor = "#f7f1e4"
 showWidgetBorder = true
-baseRadius = "8px"
-buttonRadius = "9999px"               # botões em pílula
-font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
-headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
-codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
-headingFontWeights = [300, 400, 500, 500, 500, 500]
-metricValueFontWeight = 300
-metricValueFontSize = "1.75rem"
-codeBackgroundColor = "#f6f9fc"
-blueColor = "#533afd"
-violetColor = "#533afd"
-grayColor = "#64748d"                 # ink-mute
-chartCategoricalColors = ["#533afd", "#ea2261", "#64748d"]
+baseRadius = "10px"
+buttonRadius = "9999px"
+font = "Archivo:https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap"
+headingFont = "Archivo:https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap"
+codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+headingFontWeights = [900, 800, 800, 700, 700, 700]
+metricValueFontWeight = 900
+metricValueFontSize = "2rem"
+codeBackgroundColor = "#f7f1e4"
+greenColor = "#1f7a4f"
+redColor = "#e2231a"
+yellowColor = "#b88a00"
+grayColor = "#6b665c"
+chartCategoricalColors = ["#1f7a4f", "#e2231a", "#6b665c"]
 
+# Barra lateral verde, como a placa de corredor.
 [theme.sidebar]
-backgroundColor = "#f6f9fc"
-secondaryBackgroundColor = "#ffffff"
-borderColor = "#e3e8ee"
+backgroundColor = "#0b5d3b"
+secondaryBackgroundColor = "#0f6b45"
+textColor = "#f4eee2"
+borderColor = "#0f6b45"
+primaryColor = "#ffd21f"
 
 [client]
 toolbarMode = "viewer"                # esconde o botão "Deploy" do topo
