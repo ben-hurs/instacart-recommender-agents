@@ -1,5 +1,9 @@
 # 🛒 Instacart Recommender Agents
 
+<p align="center">
+  <img src="docs/img/capa.png" alt="Capa do projeto: O que mais vai pro carrinho? Recomendador de supermercado com dados, streaming e agentes de IA" width="560">
+</p>
+
 Recomendador de produtos para supermercado online, construído em fases: da engenharia de dados (Postgres) até recomendações em tempo real (Kafka + Spark) com um time de agentes de IA (CrewAI + Claude) que personaliza e explica as sugestões.
 
 Projeto de portfólio de engenharia de dados e IA, com dados reais de pedidos do Instacart: sistemas multiagente e processamento de dados em tempo real.
@@ -391,6 +395,7 @@ docker compose run --rm --service-ports spark python -m src.spark_jobs.metrics
 ├── docker-compose.yml      # Postgres, Qdrant, Kafka, Kafka UI, app e Spark
 ├── Dockerfile              # imagem do app
 ├── Dockerfile.spark        # imagem dos jobs Spark (oficial + nossas libs)
+├── docs/img/capa.png      # capa do projeto (usada no topo deste README)
 ├── sql/
 │   ├── 01_create_raw.sql   # schema raw (espelho dos CSVs)
 │   ├── 02_load_raw.sql     # COPY dos CSVs

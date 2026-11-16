@@ -5,3 +5,6 @@ __pycache__
 
 # material para posts (LinkedIn etc.), fora do repositório
 demo/
+
+# logs das gravações com o playwright-cli
+.playwright-cli/
