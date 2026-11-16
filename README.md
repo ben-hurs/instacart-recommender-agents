@@ -306,6 +306,7 @@ Detalhes:
 - O botão dos agentes só aparece habilitado com `ANTHROPIC_API_KEY`, e avisa que cada pedido tem custo.
 - Os serviços `dashboard` e `consumer` reaproveitam a configuração do `app` com uma **âncora YAML** (`<<: *app`), sem repetir variáveis.
 - **Todas as portas publicadas só em `127.0.0.1`**: Postgres, Kafka e o painel não ficam expostos para a rede local.
+- **Design:** segue um `DESIGN.md` (linguagem visual inspirada no Stripe). Tema em `.streamlit/config.toml` (cores, fonte Inter, botões em pílula) e o resto em `src/dashboard/styles.py` (topo com degradê, títulos finos, números tabulares, painel escuro da arquitetura). As cores dos gráficos (índigo + rosa de destaque) passaram num validador de paleta para daltonismo.
 
 ---
 
@@ -418,7 +419,7 @@ docker compose run --rm --service-ports spark python -m src.spark_jobs.metrics
 │   │   ├── guardrails.py   # valida o JSON e descarta alucinações
 │   │   ├── service.py      # a crew como função (usada pelo CLI e pelo painel)
 │   │   └── run.py          # roda a crew e compara com o gabarito
-│   ├── dashboard/          # Fase 8: painel Streamlit
+│   ├── dashboard/          # Fase 8: painel Streamlit (styles.py = visual)
 │   │   ├── app.py          # navegação entre as 4 páginas
 │   │   ├── pages.py        # Visão geral, Avaliação, Ao vivo, Experimente
 │   │   ├── data.py         # consultas com cache (Postgres e Kafka)

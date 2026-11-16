@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="40" viewBox="0 0 220 40">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#665efd"/>
+      <stop offset="1" stop-color="#4434d4"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="4" width="32" height="32" rx="9" fill="url(#g)"/>
+  <!-- cesta: alça + corpo -->
+  <path d="M12 16 L15 11 M24 16 L21 11" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/>
+  <path d="M9 16 H27 L25 27 Q24.7 29 22.7 29 H13.3 Q11.3 29 11 27 Z" fill="#fff"/>
+  <circle cx="27.5" cy="12" r="3" fill="#ea2261"/>
+  <text x="44" y="26" font-family="Inter, system-ui, sans-serif" font-size="17" font-weight="500" fill="#0d253d" letter-spacing="-0.3">Recomendador</text>
+</svg>

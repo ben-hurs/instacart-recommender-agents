@@ -1,8 +1,39 @@
+# Tema do painel, seguindo o DESIGN.md (estilo Stripe):
+# tinta azul-marinho (nunca preto puro), índigo só para ações, fundo branco,
+# bordas finas (hairline) e fonte Inter (substituta aberta da Sohne).
 [theme]
 base = "light"
-primaryColor = "#2a78d6"
-backgroundColor = "#fcfcfb"
-textColor = "#0b0b0b"
+primaryColor = "#533afd"              # índigo: botões e links
+backgroundColor = "#ffffff"           # canvas
+secondaryBackgroundColor = "#f6f9fc"  # canvas-soft: campos, sidebar
+textColor = "#0d253d"                 # ink
+linkColor = "#533afd"
+linkUnderline = false
+borderColor = "#e3e8ee"               # hairline
+dataframeBorderColor = "#e3e8ee"
+dataframeHeaderBackgroundColor = "#f6f9fc"
+showWidgetBorder = true
+baseRadius = "8px"
+buttonRadius = "9999px"               # botões em pílula
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap"
+codeFont = "JetBrains Mono:https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+headingFontWeights = [300, 400, 500, 500, 500, 500]
+metricValueFontWeight = 300
+metricValueFontSize = "1.75rem"
+codeBackgroundColor = "#f6f9fc"
+blueColor = "#533afd"
+violetColor = "#533afd"
+grayColor = "#64748d"                 # ink-mute
+chartCategoricalColors = ["#533afd", "#ea2261", "#64748d"]
+
+[theme.sidebar]
+backgroundColor = "#f6f9fc"
+secondaryBackgroundColor = "#ffffff"
+borderColor = "#e3e8ee"
+
+[client]
+toolbarMode = "viewer"                # esconde o botão "Deploy" do topo
 
 [server]
 headless = true

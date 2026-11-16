@@ -2,17 +2,36 @@
 
 Regras seguidas:
   - barras horizontais finas, um eixo só, grade discreta;
-  - uma cor por gráfico de uma série (azul); o destaque usa a 2ª cor da paleta;
+  - uma cor por gráfico de uma série (índigo); o destaque usa o ruby do DESIGN.md
+    (o par índigo/ruby passou no validador de paleta: legível também por quem
+    tem daltonismo);
   - tooltip em toda marca (passe o mouse);
-  - rótulos de valor só onde ajudam a ler.
+  - rótulos de valor só onde ajudam a ler;
+  - texto dos eixos em cinza-azulado (ink-mute), nunca na cor da série.
 """
 
 import altair as alt
 import pandas as pd
 
-AZUL = "#2a78d6"      # série principal
-LARANJA = "#eb6834"   # destaque (o melhor resultado)
-CINZA_TEXTO = "#52514e"
+INDIGO = "#533afd"    # série principal
+RUBY = "#ea2261"      # destaque (o melhor resultado)
+TINTA = "#0d253d"
+MUDO = "#64748d"
+HAIRLINE = "#e3e8ee"
+FONTE = "Inter"
+
+
+def _estilo(chart: alt.Chart) -> alt.Chart:
+    """Fonte, cores de eixo e grade iguais em todos os gráficos."""
+    # padding: folga extra à esquerda. O Vega mede os rótulos antes de a fonte
+    # Inter terminar de carregar e, sem folga, cortava o começo do texto.
+    return (chart
+            .properties(padding={"left": 24, "right": 8, "top": 4, "bottom": 4})
+            .configure(font=FONTE)
+            .configure_view(stroke=None)
+            .configure_axis(labelColor=MUDO, titleColor=MUDO, labelFontSize=12, titleFontSize=12,
+                            titleFontWeight=400, domainColor=HAIRLINE, tickColor=HAIRLINE,
+                            gridColor=HAIRLINE))
 
 
 def ranking(df: pd.DataFrame, rotulo: str, valor: str, titulo_valor: str,
@@ -21,29 +40,34 @@ def ranking(df: pd.DataFrame, rotulo: str, valor: str, titulo_valor: str,
     dados = df[[rotulo, valor]].copy()
     dados["destaque"] = dados[valor] == dados[valor].max() if destacar_maior else False
     base = alt.Chart(dados).encode(
-        y=alt.Y(f"{rotulo}:N", sort="-x", title=None, axis=alt.Axis(labelLimit=220)),
-        x=alt.X(f"{valor}:Q", title=titulo_valor, axis=alt.Axis(grid=True, gridOpacity=0.3)),
-        tooltip=[alt.Tooltip(f"{rotulo}:N", title="Recomendador"),
+        y=alt.Y(f"{rotulo}:N", sort="-x", title=None,
+                axis=alt.Axis(labelLimit=220, labelColor=TINTA, domain=False, ticks=False)),
+        x=alt.X(f"{valor}:Q", title=titulo_valor,
+                axis=alt.Axis(grid=True, domain=False, tickCount=4, labelOverlap="greedy",
+                              labelFlush=False,
+                              format=".2f" if formato == ".3f" else formato)),
+        tooltip=[alt.Tooltip(f"{rotulo}:N", title="Item"),
                  alt.Tooltip(f"{valor}:Q", title=titulo_valor, format=formato)],
     )
-    barras = base.mark_bar(cornerRadiusEnd=4, height=18).encode(
-        color=alt.condition("datum.destaque", alt.value(LARANJA), alt.value(AZUL)),
+    barras = base.mark_bar(cornerRadiusEnd=4, height=16).encode(
+        color=alt.condition("datum.destaque", alt.value(RUBY), alt.value(INDIGO)),
     )
-    rotulos = base.mark_text(align="left", dx=4, color=CINZA_TEXTO, fontSize=12).encode(
+    rotulos = base.mark_text(align="left", dx=6, color=MUDO, fontSize=12).encode(
         text=alt.Text(f"{valor}:Q", format=formato),
     )
-    return (barras + rotulos).properties(height=alt.Step(28))
+    return _estilo((barras + rotulos).properties(height=alt.Step(30)))
 
 
 def linha_tempo(df: pd.DataFrame, x: str, y: str, titulo_y: str) -> alt.Chart:
-    """Uma série no tempo: linha de 2 px, pontos, tooltip com hora e valor."""
+    """Uma série no tempo: área suave + linha de 2 px + pontos, tooltip com hora e valor."""
     base = alt.Chart(df).encode(
         # Um rótulo por minuto (sem isso, o eixo repete "12:08" várias vezes).
         x=alt.X(f"{x}:T", title=None, axis=alt.Axis(
-            format="%H:%M", grid=False, tickCount={"interval": "minute", "step": 1})),
-        y=alt.Y(f"{y}:Q", title=titulo_y, axis=alt.Axis(gridOpacity=0.3)),
+            format="%H:%M", grid=False, tickMinStep=60_000, labelOverlap="greedy")),
+        y=alt.Y(f"{y}:Q", title=titulo_y, axis=alt.Axis(domain=False, ticks=False)),
         tooltip=[alt.Tooltip(f"{x}:T", title="Minuto", format="%H:%M"),
                  alt.Tooltip(f"{y}:Q", title=titulo_y)],
     )
-    return (base.mark_line(color=AZUL, strokeWidth=2)
-            + base.mark_point(color=AZUL, filled=True, size=50)).properties(height=240)
+    linha = base.mark_line(color=INDIGO, strokeWidth=2)
+    pontos = base.mark_point(color=INDIGO, filled=True, size=60, stroke="#fff", strokeWidth=2)
+    return _estilo((linha + pontos).properties(height=240))

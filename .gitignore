@@ -2,3 +2,6 @@
 .venv
 *.csv*
 __pycache__
+
+# material para posts (LinkedIn etc.), fora do repositório
+demo/
